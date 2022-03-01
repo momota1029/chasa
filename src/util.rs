@@ -17,11 +17,3 @@ pub(crate) fn run_drop<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, T>(
     });
     (res, dropped)
 }
-
-use crate::*;
-fn te() {
-    let num = one_of('0'..='9').many::<String>().and_then(|str| str.parse::<u32>().map_err(prim::Error::Message));
-    let prod = num.sep1(1, |a, b| a * b, char('*'));
-    let sum = prod.sep1(0, |a, b| a + b, char('+'));
-    assert_eq!(sum.parse_easy("1+2*3+4".chars()).ok(), Some(11));
-}
