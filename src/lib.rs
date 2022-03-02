@@ -111,10 +111,13 @@
 //!         c => k.fail(prim::Error::Unexpect(c)),
 //!     })
 //!     .bind_once(move |mut str| {
-//!         one_of("eE".chars()).right(one_of("+-".chars()).or_not()).bind_once(move |pm| {
-//!             str.push('e');
-//!             str.extend(pm);
-//!             digit.extend(str)
+//!         one_of("eE".chars()).or_not().case_once(move |e,k| match e {
+//!             Some(_) => k.then(one_of("+-".chars()).or_not()).bind(move |pm| {
+//!                 str.push('e');
+//!                 str.extend(pm);
+//!                 digit.extend(str)
+//!             }),
+//!             None => k.pure(str)
 //!         })
 //!     })
 //!     .and_then_once(|str| str.parse::<f64>().map_err(prim::Error::Message))

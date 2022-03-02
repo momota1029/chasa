@@ -117,7 +117,7 @@ impl<'a, O, I: Input, C, S, M: Cb> IReturn<'a, O, I, C, S, M> {
         IReturn(self.0.map(|(_, k)| (o, k)))
     }
     #[inline]
-    pub fn bind<P: ParserOnce<I, C, S, M>>(self, f: impl Fn(O) -> P) -> IReturn<'a, P::Output, I, C, S, M> {
+    pub fn bind<P: ParserOnce<I, C, S, M>>(self, f: impl FnOnce(O) -> P) -> IReturn<'a, P::Output, I, C, S, M> {
         self.case(|o, k| k.then(f(o)))
     }
     #[inline]

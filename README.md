@@ -4,7 +4,7 @@ A parser combinator with additional operations on procedures.
 
 A parser combinator is a mechanism that allows you to combine small syntactic elements to define a larger syntax, which can then be parse directly.
 
-```
+```rust
 use chasa::{Parser, EasyParser, prim, prim::{one_of, char}};
 // It reads a number of letters (numbers) from 0 to 9,
 let num = one_of('0'..='9').many::<String>()
@@ -12,17 +12,17 @@ let num = one_of('0'..='9').many::<String>()
     .and_then(|str| str.parse::<u32>().map_err(prim::Error::Message));
 
 // Multiply by something separated by '*' and
-let prod = num.sep1(1, |a, b| a * b, char('*'));
+let prod = num.sep_fold1(char('*'), |a,_,b| a * b);
 // Then add the '+' separator to it.
-let sum = prod.sep1(0, |a, b| a + b, char('+'));
+let sum = prod.sep_fold1(char('+'), |a,_,b| a + b);
 // Can parse simple addition and multiplication expressions.
-assert_eq!(sum.parse_easy("1+2*3+4".chars()).ok(), Some(11));
+assert_eq!(sum.parse_ok("1+2*3+4".chars()), Some(11));
 ```
 
 Rust doesn't allow you to branch different functions, which prevents you from writing procedural parsers. This hampers the writing of procedural parsers, which can be replaced by a procedural chain for better visibility.
 
 For example, the JSON parser is procedural, but you can write it in procedural form:
-```
+```rust
 use chasa::*;
 use chasa::char::*;
 
@@ -45,10 +45,10 @@ fn json_parser<I: Input<Item = char> + Clone>() -> impl EasyParser<I, Output = J
                     .right(string_char.many_with(|iter| iter.map_while(|x| x).collect()))
                     .between(whitespace, whitespace)
                     .bind(|key| char(':').right(json_parser).map_once(move |value| (key, value)))
-                    .extend_sep(vec![], char(',')),
+                    .sep(char(',')),
             ).left(char('}'))
             .map(JSON::Object),
-        '[' => k.then(json_parser.extend_sep(vec![], char(','))).left(char(']')).map(JSON::Array),
+        '[' => k.then(json_parser.sep(char(','))).left(char(']')).map(JSON::Array),
         '"' => k.then(string_char.many_with(|iter| iter.map_while(|x| x).collect())).map(JSON::String),
         '-' => k.then(any).bind(num_parser).map(|n| JSON::Number(-n)),
         c @ '0'..='9' => k.then(num_parser(c)).map(JSON::Number),
@@ -113,17 +113,20 @@ fn num_parser<I: Input<Item = char> + Clone>(c: char) -> impl EasyParser<I, Outp
         c => k.fail(prim::Error::Unexpect(c)),
     })
     .bind_once(move |mut str| {
-        one_of("eE".chars()).right(one_of("+-".chars()).or_not()).bind_once(move |pm| {
-            str.push('e');
-            str.extend(pm);
-            digit.extend(str)
+        one_of("eE".chars()).or_not().case_once(move |e,k| match e {
+            Some(_) => k.then(one_of("+-".chars()).or_not()).bind(move |pm| {
+                str.push('e');
+                str.extend(pm);
+                digit.extend(str)
+            }),
+            None => k.pure(str)
         })
     })
     .and_then_once(|str| str.parse::<f64>().map_err(prim::Error::Message))
 }
 
 assert_eq!(
-    json_parser.parse_easy("{\"key1\": \"value1\", \"key2\": [ true, \"value3\" ], \"key3\": { \"key4\": 15e1 }}".chars()).ok(),
+    json_parser.parse_ok("{\"key1\": \"value1\", \"key2\": [ true, \"value3\" ], \"key3\": { \"key4\": 15e1 }}".chars()),
     Some(JSON::Object(vec![
         ("key1".to_string(), JSON::String("value1".to_string())),
         ("key2".to_string(), JSON::Array(vec![JSON::True, JSON::String("value3".to_string())])),
