@@ -29,15 +29,15 @@ impl<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, F: Fn() -> P> Parser<I, C
 ///     // Note the reverse order
 ///     parser_once(|k| k.then(any.and(p).map(|(x,mut xs)| {xs.push(x); xs}).or(pure(String::new()))))
 /// }
-/// assert_eq!(p.parse_easy("abcd".chars()).ok(), Some("dcba".to_string()));
-/// assert_eq!(p.parse_easy("stressed".chars()).ok(), Some("desserts".to_string()));
+/// assert_eq!(p.parse_ok("abcd".chars()), Some("dcba".to_string()));
+/// assert_eq!(p.parse_ok("stressed".chars()), Some("desserts".to_string()));
 ///
 /// // Straightforward implementation without wasting stacks
 /// let q = tail_rec(vec![], |mut xs| any.or_not().map_once(move |x| match x {
 ///     Some(x) => { xs.push(x); Err(xs) },
 ///     None => Ok(xs)
 /// })).map(|xs| xs.iter().rev().collect::<String>());
-/// assert_eq!(q.parse_easy("stressed".chars()).ok(), Some("desserts".to_string()));
+/// assert_eq!(q.parse_ok("stressed".chars()), Some("desserts".to_string()));
 /// ```
 #[derive(Clone, Copy)]
 pub struct FnParser<F>(F);
@@ -68,8 +68,8 @@ impl<O, I: Input, C, S, M: Cb, F: Fn(ICont<I, C, S, M>) -> IReturn<O, I, C, S, M
 /// use chasa::*;
 /// let p = char('a').and(char('b'));
 /// let p = p.to_ref();
-/// assert_eq!(p.parse_easy("ab".chars()).ok(), Some(('a','b')));
-/// assert_eq!(many(p).parse_easy("abababc".chars()).ok(), Some(vec![('a','b'),('a','b'),('a','b')]));
+/// assert_eq!(p.parse_ok("ab".chars()), Some(('a','b')));
+/// assert_eq!(many(p).parse_ok("abababc".chars()), Some(vec![('a','b'),('a','b'),('a','b')]));
 /// ```
 pub struct RefParser<'a, P>(pub(crate) &'a P);
 impl<'a, P> Clone for RefParser<'a, P> {
@@ -244,8 +244,8 @@ impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb> Parser<I, C, S, M> fo
 /// A parser that takes a single arbitrary character.
 /// ```
 /// use chasa::*;
-/// assert_eq!(any.parse_easy("12".chars()).ok(), Some('1'));
-/// assert_eq!(any.parse_easy("".chars()).ok(), None)
+/// assert_eq!(any.parse_ok("12".chars()), Some('1'));
+/// assert_eq!(any.parse_ok("".chars()), None)
 /// ```
 pub struct Any<I, C, S, M>(PhantomData<fn() -> (I, C, S, M)>);
 impl<I, C, S, M> Clone for Any<I, C, S, M> {
@@ -335,8 +335,8 @@ impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::It
 /// It takes one character from the input, compares it with the given iterator, and accepts it if any of the characters match.
 /// ```
 /// use chasa::*;
-/// assert_eq!(one_of("abc".chars()).parse_easy("a2".chars()).ok(), Some('a'));
-/// assert_eq!(one_of("def".chars()).parse_easy("a2".chars()).ok(), None)
+/// assert_eq!(one_of("abc".chars()).parse_ok("a2".chars()), Some('a'));
+/// assert_eq!(one_of("def".chars()).parse_ok("a2".chars()), None)
 /// ```
 pub struct OneOf<Iter, Item, I, C, S, M>(Iter, PhantomData<fn() -> (Item, I, C, S, M)>);
 impl<Iter: Clone, Item, I, C, S, M> Clone for OneOf<Iter, Item, I, C, S, M> {
@@ -390,8 +390,8 @@ where
 /// It takes one character from the input, compares it with the given iterator, and only accepts if none of the characters match.
 /// ```
 /// use chasa::*;
-/// assert_eq!(none_of("abc".chars()).parse_easy("a2".chars()).ok(), None);
-/// assert_eq!(none_of("def".chars()).parse_easy("a2".chars()).ok(), Some('a'))
+/// assert_eq!(none_of("abc".chars()).parse_ok("a2".chars()), None);
+/// assert_eq!(none_of("def".chars()).parse_ok("a2".chars()), Some('a'))
 /// ```
 pub struct NoneOf<Iter, Item, I, C, S, M>(Iter, PhantomData<fn() -> (Item, I, C, S, M)>);
 impl<Iter: Clone, Item, I, C, S, M> Clone for NoneOf<Iter, Item, I, C, S, M> {
@@ -442,10 +442,10 @@ impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::It
 /// A parser that compares character iterators and input as they are consumed together, and accepts them if they all match.
 /// ```
 /// use chasa::*;
-/// assert_eq!(string("a".chars(), 1).parse_easy("a2".chars()).ok(), Some(1));
-/// assert_eq!(string("a2".chars(), 1).parse_easy("a2".chars()).ok(), Some(1));
-/// assert_eq!(string("a23".chars(), 1).parse_easy("a2".chars()).ok(), None);
-/// assert_eq!(string("a3".chars(), 1).or(string("a".chars(), 2)).parse_easy("a2".chars()).ok(), Some(2));
+/// assert_eq!(string("a".chars(), 1).parse_ok("a2".chars()), Some(1));
+/// assert_eq!(string("a2".chars(), 1).parse_ok("a2".chars()), Some(1));
+/// assert_eq!(string("a23".chars(), 1).parse_ok("a2".chars()), None);
+/// assert_eq!(string("a3".chars(), 1).or(string("a".chars(), 2)).parse_ok("a2".chars()), Some(2));
 /// ```
 pub struct String<Iter, O, I, C, S, M>(Iter, O, PhantomData<fn() -> (I, C, S, M)>);
 impl<Iter: Clone, O: Clone, I, C, S, M> Clone for String<Iter, O, I, C, S, M> {

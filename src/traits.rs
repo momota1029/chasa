@@ -1,7 +1,8 @@
 use crate::{
     combi::{
-        many, many1, And, AndThen, AndThenWith, Between, Bind, Case, Cut, Extend1Parser, ExtendParser, ExtendSep, ExtendSep1, Fold, Fold1, Label,
-        LabelWith, Left, Many, Many1, ManyWith, Map, Or, OrNot, ParserIterator, Ranged, Right, Sep, Sep1, Value,
+        many, many1, And, AndThen, AndThenWith, Between, Bind, Case, Cut, Extend1Parser, ExtendParser, Fold, Fold1, Label, LabelWith, Left, Many,
+        Many1, ManyWith, Map, Or, OrNot, ParserIterator, ParserSepIterator, Ranged, Right, Sep, Sep1, SepExtend, SepExtend1, SepFold, SepFold1,
+        SepWith, Value,
     },
     error::{CustomBuilder, LazyError, Nil},
     fold, fold1,
@@ -98,6 +99,20 @@ pub trait ParserOnce<I: Input, C, S, M: CustomBuilder> {
         Self: Sized,
     {
         AndThenWith(self, f, PhantomData)
+    }
+    fn many_once_with<O, F: FnOnce(ParserIterator<prim::RefParser<Self>, I, C, S, M>) -> O>(self, f: F) -> ManyWith<Self, F>
+    where
+        Self: Sized,
+    {
+        ManyWith(self, f)
+    }
+    fn sep_once_with<O, F: FnOnce(ParserSepIterator<prim::RefParser<Self>, prim::RefParser<P>, I, C, S, M>) -> O, P: Parser<I, C, S, M>>(
+        self, sep: P, f: F,
+    ) -> SepWith<Self, P, F>
+    where
+        Self: Sized,
+    {
+        SepWith(self, sep, f)
     }
     #[inline]
     fn and<P: ParserOnce<I, C, S, M>>(self, other: P) -> And<Self, P>
@@ -212,17 +227,17 @@ pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
     {
         fold1(init, self, f)
     }
-    fn sep<T, F: Fn(T, Self::Output) -> T, P: Parser<I, C, S, M>>(self, init: T, f: F, sep: P) -> Sep<T, Self, P, F>
+    fn sep_fold<T, F: Fn(T, Self::Output) -> T, P: Parser<I, C, S, M>>(self, init: T, sep: P, f: F) -> SepFold<T, Self, P, F>
     where
         Self: Sized,
     {
-        Sep { init, p: self, sep, succ: f }
+        SepFold { init, p: self, sep, succ: f }
     }
-    fn sep1<T, F: Fn(T, Self::Output) -> T, P: Parser<I, C, S, M>>(self, init: T, f: F, sep: P) -> Sep1<T, Self, P, F>
+    fn sep_fold1<F: Fn(Self::Output, P::Output, Self::Output) -> Self::Output, P: Parser<I, C, S, M>>(self, sep: P, f: F) -> SepFold1<Self, P, F>
     where
         Self: Sized,
     {
-        Sep1 { init, p: self, sep, succ: f }
+        SepFold1 { p: self, sep, succ: f }
     }
     fn extend<O>(self, value: O) -> ExtendParser<O, Self>
     where
@@ -236,17 +251,17 @@ pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
     {
         Extend1Parser(value, self)
     }
-    fn extend_sep<T: Extend<Self::Output>, P: Parser<I, C, S, M>>(self, init: T, sep: P) -> ExtendSep<T, Self, P>
+    fn sep_extend<T: Extend<Self::Output>, P: Parser<I, C, S, M>>(self, init: T, sep: P) -> SepExtend<T, Self, P>
     where
         Self: Sized,
     {
-        ExtendSep { init, p: self, sep }
+        SepExtend { init, p: self, sep }
     }
-    fn extend_sep1<T: Extend<Self::Output>, P: Parser<I, C, S, M>>(self, init: T, sep: P) -> ExtendSep1<T, Self, P>
+    fn sep_extend1<T: Extend<Self::Output>, P: Parser<I, C, S, M>>(self, init: T, sep: P) -> SepExtend1<T, Self, P>
     where
         Self: Sized,
     {
-        ExtendSep1 { init, p: self, sep }
+        SepExtend1 { init, p: self, sep }
     }
     fn skip_many(self) -> ExtendParser<(), Value<Self, ()>>
     where
@@ -278,6 +293,26 @@ pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
     {
         ManyWith(self, f)
     }
+    fn sep<B: FromIterator<Self::Output>, P: Parser<I, C, S, M>>(self, sep: P) -> Sep<Self, P, B>
+    where
+        Self: Sized,
+    {
+        Sep(self, sep, PhantomData)
+    }
+    fn sep1<B: FromIterator<Self::Output>, P: Parser<I, C, S, M>>(self, sep: P) -> Sep1<Self, P, B>
+    where
+        Self: Sized,
+    {
+        Sep1(self, sep, PhantomData)
+    }
+    fn sep_with<O, F: Fn(ParserSepIterator<prim::RefParser<Self>, prim::RefParser<P>, I, C, S, M>) -> O, P: Parser<I, C, S, M>>(
+        self, sep: P, f: F,
+    ) -> SepWith<Self, P, F>
+    where
+        Self: Sized,
+    {
+        SepWith(self, sep, f)
+    }
 }
 
 pub trait SimpleParser<I: Input, M: CustomBuilder>: ParserOnce<I, (), (), M> + Sized {
@@ -299,6 +334,15 @@ pub trait EasyParser<I: Input>: ParserOnce<I, (), (), Nil> + Sized {
         self.run_once(ICont { ok: IOk { input: input.into_input(), state: (), err: None, cutted: false }, config: &(), drop: &mut || {} })
             .map(|(o, _)| o)
             .map_err(|e| format!("{}", e.map(|e| e.calc())))
+    }
+    /// Returns the result or not, useful for testing.
+    fn parse_ok<In: IntoInput<IntoI = I>>(self, input: In) -> Option<Self::Output>
+    where
+        I::Pos: Display,
+    {
+        self.run_once(ICont { ok: IOk { input: input.into_input(), state: (), err: None, cutted: false }, config: &(), drop: &mut || {} })
+            .map(|(o, _)| o)
+            .ok()
     }
 }
 impl<I: Input, P: ParserOnce<I, (), (), Nil>> EasyParser<I> for P {}

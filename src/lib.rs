@@ -10,11 +10,11 @@
 //!     .and_then(|str| str.parse::<u32>().map_err(prim::Error::Message));
 //!
 //! // Multiply by something separated by '*' and
-//! let prod = num.sep1(1, |a, b| a * b, char('*'));
+//! let prod = num.sep_fold1(char('*'), |a,_,b| a * b);
 //! // Then add the '+' separator to it.
-//! let sum = prod.sep1(0, |a, b| a + b, char('+'));
+//! let sum = prod.sep_fold1(char('+'), |a,_,b| a + b);
 //! // Can parse simple addition and multiplication expressions.
-//! assert_eq!(sum.parse_easy("1+2*3+4".chars()).ok(), Some(11));
+//! assert_eq!(sum.parse_ok("1+2*3+4".chars()), Some(11));
 //! ```
 //!
 //! Rust doesn't allow you to branch different functions, which prevents you from writing procedural parsers. This hampers the writing of procedural parsers, which can be replaced by a procedural chain for better visibility.
@@ -43,10 +43,10 @@
 //!                     .right(string_char.many_with(|iter| iter.map_while(|x| x).collect()))
 //!                     .between(whitespace, whitespace)
 //!                     .bind(|key| char(':').right(json_parser).map_once(move |value| (key, value)))
-//!                     .extend_sep(vec![], char(',')),
+//!                     .sep(char(',')),
 //!             ).left(char('}'))
 //!             .map(JSON::Object),
-//!         '[' => k.then(json_parser.extend_sep(vec![], char(','))).left(char(']')).map(JSON::Array),
+//!         '[' => k.then(json_parser.sep(char(','))).left(char(']')).map(JSON::Array),
 //!         '"' => k.then(string_char.many_with(|iter| iter.map_while(|x| x).collect())).map(JSON::String),
 //!         '-' => k.then(any).bind(num_parser).map(|n| JSON::Number(-n)),
 //!         c @ '0'..='9' => k.then(num_parser(c)).map(JSON::Number),
@@ -121,7 +121,7 @@
 //! }
 //!
 //! assert_eq!(
-//!     json_parser.parse_easy("{\"key1\": \"value1\", \"key2\": [ true, \"value3\" ], \"key3\": { \"key4\": 15e1 }}".chars()).ok(),
+//!     json_parser.parse_ok("{\"key1\": \"value1\", \"key2\": [ true, \"value3\" ], \"key3\": { \"key4\": 15e1 }}".chars()),
 //!     Some(JSON::Object(vec![
 //!         ("key1".to_string(), JSON::String("value1".to_string())),
 //!         ("key2".to_string(), JSON::Array(vec![JSON::True, JSON::String("value3".to_string())])),
