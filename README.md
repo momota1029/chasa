@@ -2,6 +2,11 @@
 
 A parser combinator with additional operations on procedures.
 
+usage:
+```sh
+cargo install chasa
+```
+
 A parser combinator is a mechanism that allows you to combine small syntactic elements to define a larger syntax, which can then be parse directly.
 
 ```rust

@@ -83,13 +83,6 @@ impl<'a, I: Input + Clone, C, S: Clone, M: Cb> ICont<'a, I, C, S, M> {
         self.then(combi::SepFold { init: o, p, sep, succ: f })
     }
 
-    // #[inline]
-    // pub fn sep1<O, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(
-    //     self, o: O, p: P1, sep: P2, f: impl Fn(O, P1::Output) -> O,
-    // ) -> IReturn<'a, O, I, C, S, M> {
-    //     self.then(combi::Sep1 { init: o, p, sep, succ: f })
-    // }
-
     #[inline]
     pub fn sep_extend<O: Extend<P1::Output>, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(
         self, o: O, p: P1, sep: P2,
@@ -172,11 +165,6 @@ impl<'a, O, I: Input + Clone + 'a, C, S: Clone + 'a, M: Cb> IReturn<'a, O, I, C,
     ) -> IReturn<'a, O, I, C, S, M> {
         self.case(|o, k| k.sep_fold(o, p, sep, f))
     }
-
-    // #[inline]
-    // pub fn sep1<P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(self, p: P1, sep: P2, f: impl Fn(O, P1::Output) -> O) -> IReturn<'a, O, I, C, S, M> {
-    //     self.case(|o, k| k.sep1(o, p, sep, f))
-    // }
 
     #[inline]
     pub fn sep_extend<P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(self, p: P1, sep: P2) -> IReturn<'a, O, I, C, S, M>
