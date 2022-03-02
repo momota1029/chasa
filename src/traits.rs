@@ -1,8 +1,8 @@
 use crate::{
     combi::{
-        many, many1, And, AndThen, AndThenWith, Between, Bind, Case, Cut, Extend1Parser, ExtendParser, Fold, Fold1, Label, LabelWith, Left, Many,
-        Many1, ManyWith, Map, Or, OrNot, ParserIterator, ParserSepIterator, Ranged, Right, Sep, Sep1, SepExtend, SepExtend1, SepFold, SepFold1,
-        SepWith, Value,
+        many, many1, And, AndThen, AndThenWith, Between, Bind, Case, Cut, Extend1Parser, ExtendParser, Fold, Fold1,
+        Label, LabelWith, Left, Many, Many1, ManyWith, Map, Or, OrNot, ParserIterator, ParserSepIterator, Ranged,
+        Right, Sep, Sep1, SepExtend, SepExtend1, SepFold, SepFold1, SepWith, Value,
     },
     error::{CustomBuilder, LazyError, Nil},
     fold, fold1,
@@ -40,12 +40,15 @@ impl<I: Input, S, M: CustomBuilder> IOk<I, S, M> {
 }
 
 /// The return value of the Parser is made truly persistent.
-pub struct IReturn<'a, O, I: Input, C, S, M: CustomBuilder>(pub(crate) Result<(O, ICont<'a, I, C, S, M>), LazyError<I, M>>);
+pub struct IReturn<'a, O, I: Input, C, S, M: CustomBuilder>(
+    pub(crate) Result<(O, ICont<'a, I, C, S, M>), LazyError<I, M>>,
+);
 
 /// A parser that can be run only once, like `FnOnce`.
 /// Some functions are marked with `once` because the callback only needs to be executed once.
 /// Often used to process values.
 /// `I` is a stream with position, `C` is an immutable value that the whole parser refers to (an argument if it's a function), `S` is a variable value that the whole parser refers to (like a global variable), and `M` is a type for defining your own errors.
+/// See Output type for the function of each parser.
 pub trait ParserOnce<I: Input, C, S, M: CustomBuilder> {
     type Output;
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Self::Output, I, S, M>;
@@ -86,13 +89,20 @@ pub trait ParserOnce<I: Input, C, S, M: CustomBuilder> {
     {
         Bind(self, f)
     }
-    fn and_then_once<O, E: Display + 'static, F: FnOnce(Self::Output) -> Result<O, prim::Error<E>>>(self, f: F) -> AndThen<Self, F>
+    fn and_then_once<O, E: Display + 'static, F: FnOnce(Self::Output) -> Result<O, prim::Error<E>>>(
+        self, f: F,
+    ) -> AndThen<Self, F>
     where
         Self: Sized,
     {
         AndThen(self, f)
     }
-    fn and_then_once_with<O, E: Display, F2: Fn() -> E + 'static, F1: FnOnce(Self::Output) -> Result<O, prim::Error<F2>>>(
+    fn and_then_once_with<
+        O,
+        E: Display,
+        F2: Fn() -> E + 'static,
+        F1: FnOnce(Self::Output) -> Result<O, prim::Error<F2>>,
+    >(
         self, f: F1,
     ) -> AndThenWith<Self, F1, F2>
     where
@@ -100,13 +110,19 @@ pub trait ParserOnce<I: Input, C, S, M: CustomBuilder> {
     {
         AndThenWith(self, f, PhantomData)
     }
-    fn many_once_with<O, F: FnOnce(ParserIterator<prim::RefParser<Self>, I, C, S, M>) -> O>(self, f: F) -> ManyWith<Self, F>
+    fn many_once_with<O, F: FnOnce(ParserIterator<prim::RefParser<Self>, I, C, S, M>) -> O>(
+        self, f: F,
+    ) -> ManyWith<Self, F>
     where
         Self: Sized,
     {
         ManyWith(self, f)
     }
-    fn sep_once_with<O, F: FnOnce(ParserSepIterator<prim::RefParser<Self>, prim::RefParser<P>, I, C, S, M>) -> O, P: Parser<I, C, S, M>>(
+    fn sep_once_with<
+        O,
+        F: FnOnce(ParserSepIterator<prim::RefParser<Self>, prim::RefParser<P>, I, C, S, M>) -> O,
+        P: Parser<I, C, S, M>,
+    >(
         self, sep: P, f: F,
     ) -> SepWith<Self, P, F>
     where
@@ -143,7 +159,9 @@ pub trait ParserOnce<I: Input, C, S, M: CustomBuilder> {
         OrNot(self)
     }
     #[inline]
-    fn between<P1: ParserOnce<I, C, S, M>, P2: ParserOnce<I, C, S, M>>(self, left: P1, right: P2) -> Between<P1, Self, P2>
+    fn between<P1: ParserOnce<I, C, S, M>, P2: ParserOnce<I, C, S, M>>(
+        self, left: P1, right: P2,
+    ) -> Between<P1, Self, P2>
     where
         Self: Sized,
     {
@@ -174,6 +192,7 @@ pub trait ParserOnce<I: Input, C, S, M: CustomBuilder> {
 
 /// A parser that can be used again and again.
 /// There is no equivalent to FnMut to prevent it from becoming an unintentionally destructive parser.
+/// See Output type for the function of each parser.
 pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Self::Output, I, S, M>;
 
@@ -201,7 +220,9 @@ pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
     {
         Bind(self, f)
     }
-    fn and_then<O, E: Display + 'static, F: Fn(Self::Output) -> Result<O, prim::Error<E>>>(self, f: F) -> AndThen<Self, F>
+    fn and_then<O, E: Display + 'static, F: Fn(Self::Output) -> Result<O, prim::Error<E>>>(
+        self, f: F,
+    ) -> AndThen<Self, F>
     where
         Self: Sized,
     {
@@ -227,13 +248,17 @@ pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
     {
         fold1(init, self, f)
     }
-    fn sep_fold<T, F: Fn(T, Self::Output) -> T, P: Parser<I, C, S, M>>(self, init: T, sep: P, f: F) -> SepFold<T, Self, P, F>
+    fn sep_fold<T, F: Fn(T, Self::Output) -> T, P: Parser<I, C, S, M>>(
+        self, init: T, sep: P, f: F,
+    ) -> SepFold<T, Self, P, F>
     where
         Self: Sized,
     {
         SepFold { init, p: self, sep, succ: f }
     }
-    fn sep_fold1<F: Fn(Self::Output, P::Output, Self::Output) -> Self::Output, P: Parser<I, C, S, M>>(self, sep: P, f: F) -> SepFold1<Self, P, F>
+    fn sep_fold1<F: Fn(Self::Output, P::Output, Self::Output) -> Self::Output, P: Parser<I, C, S, M>>(
+        self, sep: P, f: F,
+    ) -> SepFold1<Self, P, F>
     where
         Self: Sized,
     {
@@ -305,7 +330,11 @@ pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
     {
         Sep1(self, sep, PhantomData)
     }
-    fn sep_with<O, F: Fn(ParserSepIterator<prim::RefParser<Self>, prim::RefParser<P>, I, C, S, M>) -> O, P: Parser<I, C, S, M>>(
+    fn sep_with<
+        O,
+        F: Fn(ParserSepIterator<prim::RefParser<Self>, prim::RefParser<P>, I, C, S, M>) -> O,
+        P: Parser<I, C, S, M>,
+    >(
         self, sep: P, f: F,
     ) -> SepWith<Self, P, F>
     where
@@ -317,9 +346,13 @@ pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
 
 pub trait SimpleParser<I: Input, M: CustomBuilder>: ParserOnce<I, (), (), M> + Sized {
     fn parse<In: IntoInput<IntoI = I>>(self, input: In) -> Result<Self::Output, Error<I, M::To>> {
-        self.run_once(ICont { ok: IOk { input: input.into_input(), state: (), err: None, cutted: false }, config: &(), drop: &mut || {} })
-            .map(|(o, _)| o)
-            .map_err(|e| e.map(|e| e.calc()))
+        self.run_once(ICont {
+            ok: IOk { input: input.into_input(), state: (), err: None, cutted: false },
+            config: &(),
+            drop: &mut || {},
+        })
+        .map(|(o, _)| o)
+        .map_err(|e| e.map(|e| e.calc()))
     }
 }
 impl<I: Input, M: CustomBuilder, P: ParserOnce<I, (), (), M>> SimpleParser<I, M> for P {}
@@ -331,18 +364,26 @@ pub trait EasyParser<I: Input>: ParserOnce<I, (), (), Nil> + Sized {
     where
         I::Pos: Display,
     {
-        self.run_once(ICont { ok: IOk { input: input.into_input(), state: (), err: None, cutted: false }, config: &(), drop: &mut || {} })
-            .map(|(o, _)| o)
-            .map_err(|e| format!("{}", e.map(|e| e.calc())))
+        self.run_once(ICont {
+            ok: IOk { input: input.into_input(), state: (), err: None, cutted: false },
+            config: &(),
+            drop: &mut || {},
+        })
+        .map(|(o, _)| o)
+        .map_err(|e| format!("{}", e.map(|e| e.calc())))
     }
     /// Returns the result or not, useful for testing.
     fn parse_ok<In: IntoInput<IntoI = I>>(self, input: In) -> Option<Self::Output>
     where
         I::Pos: Display,
     {
-        self.run_once(ICont { ok: IOk { input: input.into_input(), state: (), err: None, cutted: false }, config: &(), drop: &mut || {} })
-            .map(|(o, _)| o)
-            .ok()
+        self.run_once(ICont {
+            ok: IOk { input: input.into_input(), state: (), err: None, cutted: false },
+            config: &(),
+            drop: &mut || {},
+        })
+        .map(|(o, _)| o)
+        .ok()
     }
 }
 impl<I: Input, P: ParserOnce<I, (), (), Nil>> EasyParser<I> for P {}

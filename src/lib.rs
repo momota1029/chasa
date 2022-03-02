@@ -146,7 +146,7 @@ pub mod input;
 pub use input::Input;
 pub mod prim;
 pub use prim::{
-    any, char, config, eoi, fail, fail_with, get_state, local_state, no_state, none_of, one_of, parser, parser_once, pos, pure, satisfy, satisfy_map,
-    set_config, set_state, state, string,
+    any, char, config, eoi, fail, fail_with, get_state, local_state, no_state, none_of, one_of, parser, parser_once,
+    pos, pure, satisfy, satisfy_map, set_config, set_state, state, string,
 };
 mod util;

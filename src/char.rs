@@ -205,7 +205,9 @@ pub fn nls<I: Input<Item = char> + Clone, S, C, M: Cb>() -> impl ParserOnce<I, C
         satisfy_map(get_sp_kind).or_not().map(move |kind| match kind {
             None => Ok(nls),
             Some(SpaceKind::NL(NLKind::CarriageReturn)) => Err((NLS { newline: newline + 1, space: 0 }, true)),
-            Some(SpaceKind::NL(NLKind::LineFeed)) => Err((if after_r { nls } else { NLS { newline: newline + 1, space: 0 } }, false)),
+            Some(SpaceKind::NL(NLKind::LineFeed)) => {
+                Err((if after_r { nls } else { NLS { newline: newline + 1, space: 0 } }, false))
+            },
             Some(SpaceKind::NL(NLKind::Other)) => Err((NLS { newline: newline + 1, space: 0 }, false)),
             Some(_) => Err((NLS { newline, space: space + 1 }, false)),
         })

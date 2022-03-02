@@ -115,7 +115,9 @@ impl<M: CustomBuilder> CustomBuilder for Builder<M> {
     }
     fn calc(self) -> Self::To {
         match self {
-            Builder::Trivial { unexpect, expect } => Messages::Trivial { unexpect: unexpect.map(|u| format!("{}", u)), expect: expect.merge() },
+            Builder::Trivial { unexpect, expect } => {
+                Messages::Trivial { unexpect: unexpect.map(|u| format!("{}", u)), expect: expect.merge() }
+            },
             Builder::Message(msg) => Messages::Message(msg.merge()),
             Builder::Custom(m) => Messages::Custom(m.calc()),
         }
@@ -123,7 +125,9 @@ impl<M: CustomBuilder> CustomBuilder for Builder<M> {
     #[inline]
     fn label(self, label: impl Display + 'static) -> Self {
         match self {
-            Self::Trivial { unexpect, expect: _ } => Self::Trivial { unexpect, expect: LazyTree::Leaf(Box::new(label)) },
+            Self::Trivial { unexpect, expect: _ } => {
+                Self::Trivial { unexpect, expect: LazyTree::Leaf(Box::new(label)) }
+            },
             Self::Custom(c) => Self::Custom(c.label(label)),
             o => o,
         }

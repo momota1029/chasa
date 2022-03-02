@@ -46,10 +46,14 @@ pub fn parser<I: Input, O, C, S, M: Cb, F: Fn(ICont<I, C, S, M>) -> IReturn<O, I
     FnParser(f)
 }
 #[inline]
-pub fn parser_once<I: Input, O, C, S, M: Cb, F: FnOnce(ICont<I, C, S, M>) -> IReturn<O, I, C, S, M>>(f: F) -> FnParser<F> {
+pub fn parser_once<I: Input, O, C, S, M: Cb, F: FnOnce(ICont<I, C, S, M>) -> IReturn<O, I, C, S, M>>(
+    f: F,
+) -> FnParser<F> {
     FnParser(f)
 }
-impl<O, I: Input, C, S, M: Cb, F: FnOnce(ICont<I, C, S, M>) -> IReturn<O, I, C, S, M>> ParserOnce<I, C, S, M> for FnParser<F> {
+impl<O, I: Input, C, S, M: Cb, F: FnOnce(ICont<I, C, S, M>) -> IReturn<O, I, C, S, M>> ParserOnce<I, C, S, M>
+    for FnParser<F>
+{
     type Output = O;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
@@ -93,7 +97,9 @@ impl<'a, I: Input, C, S, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M> for Re
     }
 }
 
-impl<I: Input, C, S, M: Cb, P1: ParserOnce<I, C, S, M>, P2: ParserOnce<I, C, S, M, Output = P1::Output>> ParserOnce<I, C, S, M> for Either<P1, P2> {
+impl<I: Input, C, S, M: Cb, P1: ParserOnce<I, C, S, M>, P2: ParserOnce<I, C, S, M, Output = P1::Output>>
+    ParserOnce<I, C, S, M> for Either<P1, P2>
+{
     type Output = P1::Output;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<P1::Output, I, S, M> {
@@ -302,14 +308,18 @@ impl<Item: Copy, I, C, S, M> Copy for Char<Item, I, C, S, M> {}
 pub fn char<Item, I, C, S, M>(char: Item) -> Char<Item, I, C, S, M> {
     Char(char, PhantomData)
 }
-impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item>> ParserOnce<I, C, S, M> for Char<Item, I, C, S, M> {
+impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item>> ParserOnce<I, C, S, M>
+    for Char<Item, I, C, S, M>
+{
     type Output = I::Item;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
         self.run(cont)
     }
 }
-impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item>> Parser<I, C, S, M> for Char<Item, I, C, S, M> {
+impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item>> Parser<I, C, S, M>
+    for Char<Item, I, C, S, M>
+{
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
         let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
@@ -350,7 +360,8 @@ impl<Iter: Copy, Item, I, C, S, M> Copy for OneOf<Iter, Item, I, C, S, M> {}
 pub fn one_of<Iter: IntoIterator<Item = Item>, Item, I, C, S, M>(iter: Iter) -> OneOf<Iter, Item, I, C, S, M> {
     OneOf(iter, PhantomData)
 }
-impl<I: Input, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoIterator<Item = Item>> ParserOnce<I, C, S, M> for OneOf<Iter, Item, I, C, S, M>
+impl<I: Input, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoIterator<Item = Item>> ParserOnce<I, C, S, M>
+    for OneOf<Iter, Item, I, C, S, M>
 where
     I::Item: Display + 'static,
 {
@@ -377,7 +388,8 @@ where
         }
     }
 }
-impl<I: Input, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoIterator<Item = Item> + Clone> Parser<I, C, S, M> for OneOf<Iter, Item, I, C, S, M>
+impl<I: Input, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoIterator<Item = Item> + Clone> Parser<I, C, S, M>
+    for OneOf<Iter, Item, I, C, S, M>
 where
     I::Item: Display + 'static,
 {
@@ -405,8 +417,14 @@ impl<Iter: Copy, Item, I, C, S, M> Copy for NoneOf<Iter, Item, I, C, S, M> {}
 pub fn none_of<Iter: IntoIterator<Item = Item>, Item, I, C, S, M>(iter: Iter) -> NoneOf<Iter, Item, I, C, S, M> {
     NoneOf(iter, PhantomData)
 }
-impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoIterator<Item = Item>> ParserOnce<I, C, S, M>
-    for NoneOf<Iter, Item, I, C, S, M>
+impl<
+        I: Input<Item = impl Display + 'static>,
+        C,
+        S,
+        M: Cb,
+        Item: PartialEq<I::Item>,
+        Iter: IntoIterator<Item = Item>,
+    > ParserOnce<I, C, S, M> for NoneOf<Iter, Item, I, C, S, M>
 {
     type Output = I::Item;
     #[inline]
@@ -430,8 +448,14 @@ impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::It
         }
     }
 }
-impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoIterator<Item = Item> + Clone> Parser<I, C, S, M>
-    for NoneOf<Iter, Item, I, C, S, M>
+impl<
+        I: Input<Item = impl Display + 'static>,
+        C,
+        S,
+        M: Cb,
+        Item: PartialEq<I::Item>,
+        Iter: IntoIterator<Item = Item> + Clone,
+    > Parser<I, C, S, M> for NoneOf<Iter, Item, I, C, S, M>
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
@@ -455,11 +479,19 @@ impl<Iter: Clone, O: Clone, I, C, S, M> Clone for String<Iter, O, I, C, S, M> {
     }
 }
 impl<Iter: Copy, O: Copy, I, C, S, M> Copy for String<Iter, O, I, C, S, M> {}
-pub fn string<Iter: IntoIterator<Item = I::Item>, O, I: Input, C, S, M: Cb>(iter: Iter, value: O) -> String<Iter, O, I, C, S, M> {
+pub fn string<Iter: IntoIterator<Item = I::Item>, O, I: Input, C, S, M: Cb>(
+    iter: Iter, value: O,
+) -> String<Iter, O, I, C, S, M> {
     String(iter, value, PhantomData)
 }
-impl<O, I: Input<Item = impl Display + 'static>, C, S, M: Cb, Iter: IntoIterator<Item = impl PartialEq<I::Item> + Display + 'static>>
-    ParserOnce<I, C, S, M> for String<Iter, O, I, C, S, M>
+impl<
+        O,
+        I: Input<Item = impl Display + 'static>,
+        C,
+        S,
+        M: Cb,
+        Iter: IntoIterator<Item = impl PartialEq<I::Item> + Display + 'static>,
+    > ParserOnce<I, C, S, M> for String<Iter, O, I, C, S, M>
 {
     type Output = O;
     #[inline]
@@ -479,7 +511,10 @@ impl<O, I: Input<Item = impl Display + 'static>, C, S, M: Cb, Iter: IntoIterator
                 Some(Err(e)) => return Err(Eb::message(e).at::<I>(index, pos, None).or_merge(err)),
                 Some(Ok(input_c)) => {
                     if str_c != input_c {
-                        return Err(Eb::unexpected(input_c).label(str_c).at::<I>(input.index(), pos, Some(input.pos())).or_merge(err));
+                        return Err(Eb::unexpected(input_c)
+                            .label(str_c)
+                            .at::<I>(input.index(), pos, Some(input.pos()))
+                            .or_merge(err));
                     }
                 },
             }
@@ -771,7 +806,9 @@ pub fn local_state<S, SLocal, P>(state: SLocal, parser: P) -> LocalState<S, SLoc
 pub fn no_state<S, P>(parser: P) -> LocalState<S, (), P> {
     LocalState((), parser, PhantomData)
 }
-impl<I: Input, C, S, SLocal, M: Cb, P: ParserOnce<I, C, SLocal, M>> ParserOnce<I, C, S, M> for LocalState<S, SLocal, P> {
+impl<I: Input, C, S, SLocal, M: Cb, P: ParserOnce<I, C, SLocal, M>> ParserOnce<I, C, S, M>
+    for LocalState<S, SLocal, P>
+{
     type Output = P::Output;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<P::Output, I, S, M> {

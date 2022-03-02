@@ -38,7 +38,9 @@ impl<'a, I: Input, C, S, M: Cb> ICont<'a, I, C, S, M> {
         f(self.config, self)
     }
 
-    pub fn tail_rec<O1, O2>(self, o1: O1, f: impl Fn(O1, Self) -> IReturn<'a, Result<O2, O1>, I, C, S, M>) -> IReturn<'a, O2, I, C, S, M> {
+    pub fn tail_rec<O1, O2>(
+        self, o1: O1, f: impl Fn(O1, Self) -> IReturn<'a, Result<O2, O1>, I, C, S, M>,
+    ) -> IReturn<'a, O2, I, C, S, M> {
         match f(o1, self).0 {
             Err(e) => IReturn(Err(e)),
             Ok((Err(o), ok)) => ok.tail_rec(o, f),
@@ -47,17 +49,23 @@ impl<'a, I: Input, C, S, M: Cb> ICont<'a, I, C, S, M> {
     }
 }
 impl<'a, I: Input + Clone, C, S: Clone, M: Cb> ICont<'a, I, C, S, M> {
-    pub fn fold<O, P: Parser<I, C, S, M>>(self, o1: O, p: P, f: impl Fn(O, P::Output) -> O) -> IReturn<'a, O, I, C, S, M> {
+    pub fn fold<O, P: Parser<I, C, S, M>>(
+        self, o1: O, p: P, f: impl Fn(O, P::Output) -> O,
+    ) -> IReturn<'a, O, I, C, S, M> {
         let ICont { ok, config, drop } = self;
         let (input2, state2, cutted) = (ok.input.clone(), ok.state.clone(), ok.cutted);
         match run_drop(p.to_ref(), ICont { ok, config, drop }, (input2, state2)) {
             (Err(e), None) => IReturn(Err(e)),
-            (Err(e), Some((input, state))) => IReturn(Ok((o1, IOk { input, state, err: Some(e), cutted }.to_cont(config, drop)))),
+            (Err(e), Some((input, state))) => {
+                IReturn(Ok((o1, IOk { input, state, err: Some(e), cutted }.to_cont(config, drop))))
+            },
             (Ok((o2, ok)), _) => ok.to_cont(config, drop).fold(f(o1, o2), p, f),
         }
     }
     #[inline]
-    pub fn fold1<O, P: Parser<I, C, S, M>>(self, o1: O, p: P, f: impl Fn(O, P::Output) -> O) -> IReturn<'a, O, I, C, S, M> {
+    pub fn fold1<O, P: Parser<I, C, S, M>>(
+        self, o1: O, p: P, f: impl Fn(O, P::Output) -> O,
+    ) -> IReturn<'a, O, I, C, S, M> {
         self.then(p.to_ref()).case(|o2, k| k.fold(f(o1, o2), p, f))
     }
 
@@ -98,7 +106,9 @@ impl<'a, I: Input + Clone, C, S: Clone, M: Cb> ICont<'a, I, C, S, M> {
 }
 impl<'a, O, I: Input, C, S, M: Cb> IReturn<'a, O, I, C, S, M> {
     #[inline]
-    pub fn case<O2>(self, f: impl FnOnce(O, ICont<'a, I, C, S, M>) -> IReturn<'a, O2, I, C, S, M>) -> IReturn<'a, O2, I, C, S, M> {
+    pub fn case<O2>(
+        self, f: impl FnOnce(O, ICont<'a, I, C, S, M>) -> IReturn<'a, O2, I, C, S, M>,
+    ) -> IReturn<'a, O2, I, C, S, M> {
         IReturn(self.0.and_then(|(o, k)| f(o, k).0))
     }
     #[inline]
@@ -126,7 +136,9 @@ impl<'a, O, I: Input, C, S, M: Cb> IReturn<'a, O, I, C, S, M> {
         self.case(|_, k| k.then(p))
     }
     #[inline]
-    pub fn tail_rec<O2>(self, f: impl Fn(O, ICont<I, C, S, M>) -> IReturn<'a, Result<O2, O>, I, C, S, M>) -> IReturn<'a, O2, I, C, S, M> {
+    pub fn tail_rec<O2>(
+        self, f: impl Fn(O, ICont<I, C, S, M>) -> IReturn<'a, Result<O2, O>, I, C, S, M>,
+    ) -> IReturn<'a, O2, I, C, S, M> {
         self.case(|o, k| k.tail_rec(o, f))
     }
     #[inline]
@@ -167,14 +179,18 @@ impl<'a, O, I: Input + Clone + 'a, C, S: Clone + 'a, M: Cb> IReturn<'a, O, I, C,
     }
 
     #[inline]
-    pub fn sep_extend<P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(self, p: P1, sep: P2) -> IReturn<'a, O, I, C, S, M>
+    pub fn sep_extend<P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(
+        self, p: P1, sep: P2,
+    ) -> IReturn<'a, O, I, C, S, M>
     where
         O: Extend<P1::Output>,
     {
         self.case(|o, k| k.sep_extend(o, p, sep))
     }
     #[inline]
-    pub fn sep_extend1<P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(self, p: P1, sep: P2) -> IReturn<'a, O, I, C, S, M>
+    pub fn sep_extend1<P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(
+        self, p: P1, sep: P2,
+    ) -> IReturn<'a, O, I, C, S, M>
     where
         O: Extend<P1::Output>,
     {
