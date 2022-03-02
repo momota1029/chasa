@@ -6,6 +6,10 @@ usage:
 ```sh
 cargo install chasa
 ```
+or write this into Cargo.toml:
+```toml
+chasa = "0.1"
+```
 
 A parser combinator is a mechanism that allows you to combine small syntactic elements to define a larger syntax, which can then be parse directly.
 

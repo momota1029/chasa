@@ -1029,11 +1029,8 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I,
 /// ```
 /// use {chasa::*, either::Either};
 /// let d = one_of("0123456789".chars()).and_then(|c: char| c.to_string().parse::<usize>().map_err(prim::Error::Message));
-/// let dq = d.map(Either::Left).or(char(')').map(Either::Right));
-/// let p = char('(').right(tail_rec(0, |n| dq.to_ref().map(move |dq| match dq {
-///     Either::Left(m) => Err(m+n),
-///     Either::Right(_) => Ok(n)
-/// })));
+/// let d = d.to_ref();
+/// let p = char('(').right(tail_rec(0, move |n| d.map(move |m| Err(m+n)).or(char(')').value(Ok(n)))));
 /// assert_eq!(p.to_ref().parse_ok("(12345)".chars()), Some(15));
 /// assert_eq!(p.to_ref().parse_ok("(12)345)".chars()), Some(3));
 /// assert_eq!(p.to_ref().parse_ok("()".chars()), Some(0));
@@ -1071,10 +1068,10 @@ fn run_tail_rec<I: Input, C, S, M: Cb, O1, O2, P: ParserOnce<I, C, S, M, Output 
 /// Collects successive runs of the parser as if they were iterators. However, a failure that consumes input will cause the whole thing to fail.
 /// ```
 /// use chasa::*;
-/// assert_eq!(any.many::<Vec<_>>().parse_ok("1234".chars()), Some(vec!['1','2','3','4']));
-/// assert_eq!(any.many::<String>().parse_ok("1234".chars()), Some("1234".to_string()));
-/// assert_eq!(char('a').many::<String>().parse_ok("aaabaaba".chars()), Some("aaa".to_string()));
-/// assert_eq!(char('a').many::<String>().parse_ok("".chars()), Some("".to_string()));
+/// assert_eq!(any.many().parse_ok("1234".chars()), Some(vec!['1','2','3','4']));
+/// assert_eq!(any.many().parse_ok("1234".chars()), Some("1234".to_string()));
+/// assert_eq!(char('a').many().parse_ok("aaabaaba".chars()), Some("aaa".to_string()));
+/// assert_eq!(char('a').many().parse_ok("".chars()), Some("".to_string()));
 /// ```
 pub struct Many<P, O>(P, PhantomData<fn() -> O>);
 impl<P: Clone, O> Clone for Many<P, O> {
@@ -1156,15 +1153,16 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser
 /// ```
 /// use chasa::*;
 /// assert_eq!(
-///     any.many_with(|iter| iter.enumerate().collect::<Vec<_>>()).parse_ok("abcde".chars()),
+///     any.many_with(|iter| iter.enumerate().collect()).parse_ok("abcde".chars()),
 ///     Some(vec![(0,'a'),(1,'b'),(2,'c'),(3,'d'),(4,'e')])
 /// );
 /// assert_eq!(
-///     any.many_with(|iter| iter.take(2).collect::<String>()).and(char('c')).parse_ok("abcde".chars()),
-///     Some(("ab".to_string(), 'c'))
+///     any.many_with(|iter| iter.take(2).collect())
+///         .and(char('c'))
+///     .parse_ok("abcde".chars()), Some(("ab".to_string(), 'c'))
 /// );
 /// assert_eq!(
-///     any.and(char('a')).many_with(|iter| iter.collect::<Vec<_>>()).parse_ok("baca".chars()),
+///     any.and(char('a')).many_with(|iter| iter.collect()).parse_ok("baca".chars()),
 ///     Some(vec![('b','a'),('c','a')])
 /// );
 /// assert_eq!(
@@ -1243,7 +1241,7 @@ impl<'a, 'b, I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Iterat
 /// ```
 /// use chasa::*;
 /// let d = one_of('0'..'9').and_then(|c: char| c.to_string().parse::<isize>().map_err(prim::Error::Message));
-/// let p = d.to_ref().sep::<Vec<_>,_>(char(','));
+/// let p = d.to_ref().sep(char(','));
 /// assert_eq!(p.parse_ok("1,2,3,4,5".chars()), Some(vec![1,2,3,4,5]));
 /// assert_eq!(p.parse_ok("".chars()), Some(vec![]));
 /// assert_eq!(p.and(char(',').right(d.to_ref())).parse_ok("1,2,3,4,5,6".chars()), None);
@@ -1285,7 +1283,7 @@ impl<O: FromIterator<P1::Output>, I: Input + Clone, C, S: Clone, M: Cb, P1: Pars
 /// ```
 /// use chasa::*;
 /// let d = one_of('0'..'9').and_then(|c: char| c.to_string().parse::<isize>().map_err(prim::Error::Message));
-/// let p = d.to_ref().sep1::<Vec<_>,_>(char(','));
+/// let p = d.to_ref().sep1(char(','));
 /// assert_eq!(p.parse_ok("1,2,3,4,5".chars()), Some(vec![1,2,3,4,5]));
 /// assert_eq!(p.parse_ok("".chars()), None);
 /// assert_eq!(p.and(char(',').right(d.to_ref())).parse_ok("1,2,3,4,5,6".chars()), None);
