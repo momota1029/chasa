@@ -1,6 +1,6 @@
 [package]
 name = "chasa"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Conashimi Momota <momota.ry2@gmail.com>"]
 description = "A parser combinator that can be chained after case separation"
 edition = "2021"
