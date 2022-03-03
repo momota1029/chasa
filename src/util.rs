@@ -1,4 +1,9 @@
-use crate::{error::CustomBuilder as Cb, ICont, IOk, IResult, Input, ParserOnce};
+use std::fmt::Display;
+
+use crate::{
+    error::{Builder as Eb, CustomBuilder as Cb},
+    ICont, IOk, IResult, Input, LazyError, ParserOnce,
+};
 
 pub(crate) fn run_drop<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, T>(
     p: P, cont: ICont<I, C, S, M>, dropped: T,
@@ -16,4 +21,25 @@ pub(crate) fn run_drop<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, T>(
         },
     });
     (res, dropped)
+}
+
+#[inline]
+pub fn run_satisfy<I: Input<Item = impl Display + 'static>, M: Cb, O>(
+    input: &mut I, drop: &mut dyn FnMut(), cutted: bool, f: impl FnOnce(I::Item) -> Result<O, I::Item>,
+) -> Result<O, LazyError<I, M>> {
+    if cutted {
+        drop()
+    }
+    let (index, pos) = (input.index(), input.pos());
+    match input.next() {
+        None => Err(Eb::unexpected_eoi().at::<I>(index, pos, None)),
+        Some(Err(e)) => Err(Eb::message(e).at::<I>(index, pos, None)),
+        Some(Ok(item)) => match f(item) {
+            Ok(o) => {
+                drop();
+                Ok(o)
+            },
+            Err(item) => Err(Eb::unexpected(item).at::<I>(input.index(), pos, Some(input.pos()))),
+        },
+    }
 }

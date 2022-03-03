@@ -13,8 +13,8 @@ use crate::{
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(pure_or(Some("first"), str("second".chars(), "second")).parse_ok("second".chars()), Some("first"));
-/// assert_eq!(pure_or(None, str("second".chars(), "second")).parse_ok("second".chars()), Some("second"))
+/// assert_eq!(pure_or(Some("first"), str("second", "second")).parse_ok("second"), Some("first"));
+/// assert_eq!(pure_or(None, str("second", "second")).parse_ok("second"), Some("second"))
 /// ```
 pub fn pure_or<O, I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>>(o: Option<O>, p: P) -> Either<Pure<O>, P> {
     match o {
@@ -63,7 +63,7 @@ impl<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>, F: Fn(P::Output) -> O, O> Par
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(char('a').label("special a").parse_easy("b".chars()), Err("unexpected b, expecting special a at 0..1".to_string()));
+/// assert_eq!(char('a').label("special a").parse_easy("b"), Err("unexpected b, expecting special a at 0..1".to_string()));
 /// ```
 #[derive(Clone, Copy)]
 pub struct Label<P, L>(pub(crate) P, pub(crate) L);
@@ -91,7 +91,7 @@ impl<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>, L: Display + 'static + Clone>
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(char('a').label_with(||"special a").parse_easy("b".chars()), Err("unexpected b, expecting special a at 0..1".to_string()));
+/// assert_eq!(char('a').label_with(||"special a").parse_easy("b"), Err("unexpected b, expecting special a at 0..1".to_string()));
 /// ```
 #[derive(Clone, Copy)]
 pub struct LabelWith<P, F>(pub(crate) P, pub(crate) F);
@@ -117,9 +117,9 @@ impl<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>, L: Display, F: Fn() -> L + 's
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(any.bind(|c| char(c)).parse_ok("aa".chars()), Some('a'));
-/// assert_eq!(char('b').bind(|_| char('a')).parse_ok("aa".chars()), None);
-/// assert_eq!(any.bind(|c| char(c)).parse_ok("ab".chars()), None);
+/// assert_eq!(any.bind(|c| char(c)).parse_ok("aa"), Some('a'));
+/// assert_eq!(char('b').bind(|_| char('a')).parse_ok("aa"), None);
+/// assert_eq!(any.bind(|c| char(c)).parse_ok("ab"), None);
 /// ```
 #[derive(Clone, Copy)]
 pub struct Bind<P, F>(pub(crate) P, pub(crate) F);
@@ -147,7 +147,7 @@ impl<I: Input, C, S, M: Cb, P1: Parser<I, C, S, M>, P2: ParserOnce<I, C, S, M>, 
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(any.and(any).parse_ok("aa".chars()), Some(('a','a')))
+/// assert_eq!(any.and(any).parse_ok("aa"), Some(('a','a')))
 /// ```
 #[derive(Clone, Copy)]
 pub struct And<P1, P2>(pub(crate) P1, pub(crate) P2);
@@ -177,9 +177,9 @@ impl<I: Input, C, S, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>> Pars
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(any.left(any).parse_ok("ab".chars()), Some('a'));
-/// assert_eq!(any.left(char('a')).parse_ok("ab".chars()), None);
-/// assert_eq!(str("chasa".chars(), ()).left(char(':')).parse_ok("chasa: parser combinator".chars()), Some(()));
+/// assert_eq!(any.left(any).parse_ok("ab"), Some('a'));
+/// assert_eq!(any.left(char('a')).parse_ok("ab"), None);
+/// assert_eq!(str("chasa", ()).left(char(':')).parse_ok("chasa: parser combinator"), Some(()));
 /// ```
 #[derive(Clone, Copy)]
 pub struct Left<P1, P2>(pub(crate) P1, pub(crate) P2);
@@ -209,9 +209,9 @@ impl<I: Input, C, S, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>> Pars
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(any.right(any).parse_ok("ab".chars()), Some('b'));
-/// assert_eq!(char('b').right(any).parse_ok("ab".chars()), None);
-/// assert_eq!(ws.right(str("chasa".chars(), ())).parse_ok("   chasa".chars()), Some(()));
+/// assert_eq!(any.right(any).parse_ok("ab"), Some('b'));
+/// assert_eq!(char('b').right(any).parse_ok("ab"), None);
+/// assert_eq!(ws.right(str("chasa", ())).parse_ok("   chasa"), Some(()));
 /// ```
 #[derive(Clone, Copy)]
 pub struct Right<P1, P2>(pub(crate) P1, pub(crate) P2);
@@ -236,8 +236,8 @@ impl<I: Input, C, S, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>> Pars
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(any.between(char('('), char(')')).parse_ok("(a)".chars()), Some('a'));
-/// assert_eq!(char('a').between(char('('), char(')')).parse_ok("(a".chars()), None);
+/// assert_eq!(any.between(char('('), char(')')).parse_ok("(a)"), Some('a'));
+/// assert_eq!(char('a').between(char('('), char(')')).parse_ok("(a"), None);
 /// ```
 #[derive(Clone, Copy)]
 pub struct Between<P1, P2, P3>(pub(crate) P1, pub(crate) P2, pub(crate) P3);
@@ -275,17 +275,17 @@ impl<I: Input, C, S, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, P3: 
 /// ```
 /// use chasa::*;
 /// fn parser<I:Input<Item=char>>() -> impl ParserOnce<I,(),(),Nil,Output=usize> {
-///     one_of("abc".chars()).case(|char, k| match char {
+///     one_of("abc").case(|char, k| match char {
 ///         'a' => k.to(10),
 ///         'b' => k.then(parser).and(parser).map(|(a,b)| a + b),
 ///         'c' => k.then(parser),
 ///         _ => unreachable!()
 ///     })
 /// }
-/// assert_eq!(parser.parse_ok("abc".chars()), Some(10));
-/// assert_eq!(parser.parse_ok("bcaa".chars()), Some(20));
-/// assert_eq!(parser.parse_ok("bcabacca".chars()), Some(30));
-/// assert_eq!(parser.parse_ok("ba".chars()), None);
+/// assert_eq!(parser.parse_ok("abc"), Some(10));
+/// assert_eq!(parser.parse_ok("bcaa"), Some(20));
+/// assert_eq!(parser.parse_ok("bcabacca"), Some(30));
+/// assert_eq!(parser.parse_ok("ba"), None);
 /// ```
 #[derive(Clone, Copy)]
 pub struct Case<P, F>(pub(crate) P, pub(crate) F);
@@ -335,8 +335,8 @@ impl<
 ///     'a' => Ok(true),
 ///     _ => Err(prim::Error::Message("hello"))
 /// });
-/// assert_eq!(p.to_ref().parse_ok("abc".chars()), Some(true));
-/// assert_eq!(p.to_ref().parse_ok("cba".chars()), None);
+/// assert_eq!(p.to_ref().parse_ok("abc"), Some(true));
+/// assert_eq!(p.to_ref().parse_ok("cba"), None);
 /// ```
 #[derive(Clone, Copy)]
 pub struct AndThen<P, F>(pub(crate) P, pub(crate) F);
@@ -403,8 +403,8 @@ impl<
 ///     'a' => Ok(true),
 ///     _ => Err(prim::Error::Message(|| "hello"))
 /// });
-/// assert_eq!(p.to_ref().parse_ok("abc".chars()), Some(true));
-/// assert_eq!(p.to_ref().parse_ok("cba".chars()), None);
+/// assert_eq!(p.to_ref().parse_ok("abc"), Some(true));
+/// assert_eq!(p.to_ref().parse_ok("cba"), None);
 /// ```
 pub struct AndThenWith<P, F1, F2>(pub(crate) P, pub(crate) F1, pub(crate) PhantomData<fn() -> F2>);
 impl<P: Clone, F1: Clone, F2> Clone for AndThenWith<P, F1, F2> {
@@ -476,15 +476,15 @@ impl<
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(char('a').or(char('b')).parse_ok("aa".chars()), Some('a'));
-/// assert_eq!(char('a').or(char('b')).parse_ok("bb".chars()), Some('b'));
-/// assert_eq!(char('a').right(char('b')).or(char('b').right(char('b'))).parse_ok("bb".chars()), Some('b'));
-/// assert_eq!(char('b').right(char('b')).or(char('b').right(char('a'))).parse_ok("ba".chars()), None);
+/// assert_eq!(char('a').or(char('b')).parse_ok("aa"), Some('a'));
+/// assert_eq!(char('a').or(char('b')).parse_ok("bb"), Some('b'));
+/// assert_eq!(char('a').right(char('b')).or(char('b').right(char('b'))).parse_ok("bb"), Some('b'));
+/// assert_eq!(char('b').right(char('b')).or(char('b').right(char('a'))).parse_ok("ba"), None);
 /// ```
 #[derive(Clone, Copy)]
 pub struct Or<P1, P2>(pub(crate) P1, pub(crate) P2);
 impl<
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -509,7 +509,7 @@ impl<
         }
     }
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M, Output = P1::Output>>
+impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M, Output = P1::Output>>
     Parser<I, C, S, M> for Or<P1, P2>
 {
     #[inline]
@@ -533,14 +533,14 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I,
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(char('a').or_not().parse_ok("aa".chars()), Some(Some('a')));
-/// assert_eq!(char('a').or_not().parse_ok("bb".chars()), Some(None));
-/// assert_eq!(char('a').right(char('b')).or_not().parse_ok("bb".chars()), Some(None));
-/// assert_eq!(char('b').right(char('b')).or_not().parse_ok("ba".chars()), None);
+/// assert_eq!(char('a').or_not().parse_ok("aa"), Some(Some('a')));
+/// assert_eq!(char('a').or_not().parse_ok("bb"), Some(None));
+/// assert_eq!(char('a').right(char('b')).or_not().parse_ok("bb"), Some(None));
+/// assert_eq!(char('b').right(char('b')).or_not().parse_ok("ba"), None);
 /// ```
 #[derive(Clone, Copy)]
 pub struct OrNot<P>(pub(crate) P);
-impl<I: Input + Clone, C, S: Clone, M: Cb, P: ParserOnce<I, C, S, M>> ParserOnce<I, C, S, M> for OrNot<P> {
+impl<I: Input, C, S: Clone, M: Cb, P: ParserOnce<I, C, S, M>> ParserOnce<I, C, S, M> for OrNot<P> {
     type Output = Option<P::Output>;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Option<P::Output>, I, S, M> {
@@ -556,7 +556,7 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, P: ParserOnce<I, C, S, M>> ParserOnce
         }
     }
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M> for OrNot<P> {
+impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M> for OrNot<P> {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Option<P::Output>, I, S, M> {
         let ICont { ok, config, drop } = cont;
@@ -576,8 +576,8 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(char('b').right(char('b')).or(char('b').right(char('a'))).parse_ok("ba".chars()), None);
-/// assert_eq!(char('b').right(char('b')).cut().or(char('b').right(char('a'))).parse_ok("ba".chars()), Some('a'));
+/// assert_eq!(char('b').right(char('b')).or(char('b').right(char('a'))).parse_ok("ba"), None);
+/// assert_eq!(char('b').right(char('b')).cut().or(char('b').right(char('a'))).parse_ok("ba"), Some('a'));
 /// ```
 #[derive(Clone, Copy)]
 pub struct Cut<P>(pub(crate) P);
@@ -623,9 +623,9 @@ impl<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M> for Cut<P>
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(char('a').ranged().parse_ok("a".chars()), Some(('a',0,1)));
-/// assert_eq!(str("abcd".chars(),()).ranged().parse_ok("abcd".chars()), Some(((),0,4)));
-/// assert_eq!(ws.right(str("abcd".chars(),()).ranged()).parse_ok("    abcd".chars()), Some(((),4,8)))
+/// assert_eq!(char('a').ranged().parse_ok("a"), Some(('a',0,1)));
+/// assert_eq!(str("abcd",()).ranged().parse_ok("abcd"), Some(((),0,4)));
+/// assert_eq!(ws.right(str("abcd",()).ranged()).parse_ok("    abcd"), Some(((),4,8)))
 /// ```
 #[derive(Clone, Copy)]
 pub struct Ranged<P>(pub(crate) P);
@@ -647,7 +647,7 @@ impl<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M> for Ranged
 
 /// Returns together with the string accepted by the parser.
 pub struct GetString<P, O>(pub(crate) P, pub(crate) PhantomData<fn() -> O>);
-impl<O: FromIterator<I::Item>, I: Input + Clone, C, S, M: Cb, P: ParserOnce<I, C, S, M>> ParserOnce<I, C, S, M>
+impl<O: FromIterator<I::Item>, I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>> ParserOnce<I, C, S, M>
     for GetString<P, O>
 {
     type Output = (P::Output, O);
@@ -661,7 +661,7 @@ impl<O: FromIterator<I::Item>, I: Input + Clone, C, S, M: Cb, P: ParserOnce<I, C
         })
     }
 }
-impl<O: FromIterator<I::Item>, I: Input + Clone, C, S, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M>
+impl<O: FromIterator<I::Item>, I: Input, C, S, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M>
     for GetString<P, O>
 {
     #[inline]
@@ -701,10 +701,10 @@ impl<'a, I: Input> ExactSizeIterator for InputIter<'a, I> {}
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(char('a').and(char('a')).parse_ok("a".chars()), None);
-/// assert_eq!(before(char('a')).and(char('a')).parse_ok("a".chars()), Some(('a','a')));
-/// assert_eq!(char('a').and(char('b')).parse_ok("ab".chars()), Some(('a','b')));
-/// assert_eq!(before(char('a')).and(char('b')).parse_ok("ab".chars()), None);
+/// assert_eq!(char('a').and(char('a')).parse_ok("a"), None);
+/// assert_eq!(before(char('a')).and(char('a')).parse_ok("a"), Some(('a','a')));
+/// assert_eq!(char('a').and(char('b')).parse_ok("ab"), Some(('a','b')));
+/// assert_eq!(before(char('a')).and(char('b')).parse_ok("ab"), None);
 /// ```
 #[derive(Clone, Copy)]
 pub struct Before<P>(pub(crate) P);
@@ -713,7 +713,7 @@ pub fn before<P>(parser: P) -> Before<P> {
     Before(parser)
 }
 
-impl<I: Input + Clone, C, S: Clone, M: Cb, P: ParserOnce<I, C, S, M>> ParserOnce<I, C, S, M> for Before<P> {
+impl<I: Input, C, S: Clone, M: Cb, P: ParserOnce<I, C, S, M>> ParserOnce<I, C, S, M> for Before<P> {
     type Output = P::Output;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<P::Output, I, S, M> {
@@ -721,7 +721,7 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, P: ParserOnce<I, C, S, M>> ParserOnce
         self.0.run_once(cont).map(|(o, IOk { err, .. })| (o, IOk { input, state, err, cutted: false }))
     }
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M> for Before<P> {
+impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M> for Before<P> {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<P::Output, I, S, M> {
         let (input, state) = (cont.ok.input.clone(), cont.ok.state.clone());
@@ -734,11 +734,11 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(char('a').and(char('a')).parse_ok("aa".chars()), Some(('a','a')));
-/// assert_eq!(not_followed_by(char('a'),'a').and(char('a')).parse_ok("aa".chars()), None);
-/// assert_eq!(not_followed_by(char('b'),'b').and(char('a')).parse_ok("a".chars()), Some(((),'a')));
-/// assert_eq!(not_followed_by(char('b'),'b').and(any).parse_ok("b".chars()), None);
-/// assert_eq!(not_followed_by(char('b').and(char('a')),'b').and(any).parse_ok("bb".chars()), None);
+/// assert_eq!(char('a').and(char('a')).parse_ok("aa"), Some(('a','a')));
+/// assert_eq!(not_followed_by(char('a'),'a').and(char('a')).parse_ok("aa"), None);
+/// assert_eq!(not_followed_by(char('b'),'b').and(char('a')).parse_ok("a"), Some(((),'a')));
+/// assert_eq!(not_followed_by(char('b'),'b').and(any).parse_ok("b"), None);
+/// assert_eq!(not_followed_by(char('b').and(char('a')),'b').and(any).parse_ok("bb"), None);
 /// ```
 #[derive(Clone, Copy)]
 pub struct NotFollowedBy<P, L>(pub(crate) P, pub(crate) L);
@@ -746,7 +746,7 @@ pub struct NotFollowedBy<P, L>(pub(crate) P, pub(crate) L);
 pub fn not_followed_by<P, L: Display + 'static>(parser: P, label: L) -> NotFollowedBy<P, L> {
     NotFollowedBy(parser, label)
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, P: ParserOnce<I, C, S, M>, L: Display + 'static> ParserOnce<I, C, S, M>
+impl<I: Input, C, S: Clone, M: Cb, P: ParserOnce<I, C, S, M>, L: Display + 'static> ParserOnce<I, C, S, M>
     for NotFollowedBy<P, L>
 {
     type Output = ();
@@ -766,7 +766,7 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, P: ParserOnce<I, C, S, M>, L: Display
         }
     }
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, L: Display + Clone + 'static> Parser<I, C, S, M>
+impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, L: Display + Clone + 'static> Parser<I, C, S, M>
     for NotFollowedBy<P, L>
 {
     #[inline]
@@ -786,7 +786,7 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, L: Display + C
     }
 }
 
-fn run_fold<O, I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>>(
+fn run_fold<O, I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>>(
     o: O, p: P, cont: ICont<I, C, S, M>, f: impl Fn(O, P::Output) -> O,
 ) -> IResult<O, I, S, M> {
     let ICont { ok, config, drop } = cont;
@@ -802,11 +802,11 @@ fn run_fold<O, I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>>(
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of("0123456789".chars()).and_then(|c: char| c.to_string().parse::<usize>().map_err(prim::Error::Message));
+/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(prim::Error::Message));
 /// let d = d.to_ref();
-/// assert_eq!(d.fold(0,|a,b| a+b).parse_ok("12345".chars()), Some(15));
-/// assert_eq!(d.fold(0,|a,b| a+b).parse_ok("".chars()), Some(0));
-/// assert_eq!(d.fold(0,|a,b| a+b).and(d).parse_ok("12345".chars()), None);
+/// assert_eq!(d.fold(0,|a,b| a+b).parse_ok("12345"), Some(15));
+/// assert_eq!(d.fold(0,|a,b| a+b).parse_ok(""), Some(0));
+/// assert_eq!(d.fold(0,|a,b| a+b).and(d).parse_ok("12345"), None);
 /// ```
 #[derive(Clone, Copy)]
 pub struct Fold<T, P, F>(T, P, F);
@@ -814,7 +814,7 @@ pub struct Fold<T, P, F>(T, P, F);
 pub fn fold<T, P, F>(init: T, parser: P, succ: F) -> Fold<T, P, F> {
     Fold(init, parser, succ)
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, T, P: Parser<I, C, S, M>, F: Fn(T, P::Output) -> T> ParserOnce<I, C, S, M>
+impl<I: Input, C, S: Clone, M: Cb, T, P: Parser<I, C, S, M>, F: Fn(T, P::Output) -> T> ParserOnce<I, C, S, M>
     for Fold<T, P, F>
 {
     type Output = T;
@@ -823,7 +823,7 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, T, P: Parser<I, C, S, M>, F: Fn(T, P:
         run_fold(self.0, self.1, cont, self.2)
     }
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, T: Clone, P: Parser<I, C, S, M>, F: Fn(T, P::Output) -> T> Parser<I, C, S, M>
+impl<I: Input, C, S: Clone, M: Cb, T: Clone, P: Parser<I, C, S, M>, F: Fn(T, P::Output) -> T> Parser<I, C, S, M>
     for Fold<T, P, F>
 {
     #[inline]
@@ -836,11 +836,11 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, T: Clone, P: Parser<I, C, S, M>, F: F
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of("0123456789".chars()).and_then(|c: char| c.to_string().parse::<usize>().map_err(prim::Error::Message));
+/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(prim::Error::Message));
 /// let d = d.to_ref();
-/// assert_eq!(d.fold1(0,|a,b| a+b).parse_ok("12345".chars()), Some(15));
-/// assert_eq!(d.fold1(0,|a,b| a+b).parse_ok("".chars()), None);
-/// assert_eq!(d.fold1(0,|a,b| a+b).and(d).parse_ok("12345".chars()), None);
+/// assert_eq!(d.fold1(0,|a,b| a+b).parse_ok("12345"), Some(15));
+/// assert_eq!(d.fold1(0,|a,b| a+b).parse_ok(""), None);
+/// assert_eq!(d.fold1(0,|a,b| a+b).and(d).parse_ok("12345"), None);
 /// ```
 #[derive(Clone, Copy)]
 pub struct Fold1<T, P, F>(T, P, F);
@@ -848,7 +848,7 @@ pub struct Fold1<T, P, F>(T, P, F);
 pub fn fold1<T, P, F>(init: T, parser: P, succ: F) -> Fold1<T, P, F> {
     Fold1(init, parser, succ)
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, T, P: Parser<I, C, S, M>, F: Fn(T, P::Output) -> T> ParserOnce<I, C, S, M>
+impl<I: Input, C, S: Clone, M: Cb, T, P: Parser<I, C, S, M>, F: Fn(T, P::Output) -> T> ParserOnce<I, C, S, M>
     for Fold1<T, P, F>
 {
     type Output = T;
@@ -860,7 +860,7 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, T, P: Parser<I, C, S, M>, F: Fn(T, P:
             .and_then(|(o, ok)| run_fold(self.2(self.0, o), self.1, ok.to_cont(config, drop), self.2))
     }
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, T: Clone, P: Parser<I, C, S, M>, F: Fn(T, P::Output) -> T> Parser<I, C, S, M>
+impl<I: Input, C, S: Clone, M: Cb, T: Clone, P: Parser<I, C, S, M>, F: Fn(T, P::Output) -> T> Parser<I, C, S, M>
     for Fold1<T, P, F>
 {
     #[inline]
@@ -874,7 +874,7 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, T: Clone, P: Parser<I, C, S, M>, F: F
 
 // sepが成功した後に本体がempty failしても元に戻る仕組み
 fn run_left_sep<
-    I: Input + Clone,
+    I: Input,
     C,
     S: Clone,
     M: Cb,
@@ -910,12 +910,12 @@ fn run_left_sep<
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of("0123456789".chars()).and_then(|c: char| c.to_string().parse::<usize>().map_err(prim::Error::Message));
+/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(prim::Error::Message));
 /// let d = d.to_ref();
-/// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).parse_ok("1,2,3,4,5".chars()), Some(15));
-/// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).parse_ok("".chars()), Some(0));
-/// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).and(char(',').right(d)).parse_ok("1,2,3,4,5,6".chars()), None);
-/// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).and(char(',')).parse_ok("1,2,3,4,".chars()), Some((10, ',')));
+/// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).parse_ok("1,2,3,4,5"), Some(15));
+/// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).parse_ok(""), Some(0));
+/// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).and(char(',').right(d)).parse_ok("1,2,3,4,5,6"), None);
+/// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).and(char(',')).parse_ok("1,2,3,4,"), Some((10, ',')));
 /// ```
 #[derive(Clone, Copy)]
 pub struct SepFold<T, P1, P2, F> {
@@ -926,7 +926,7 @@ pub struct SepFold<T, P1, P2, F> {
 }
 
 impl<
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -951,7 +951,7 @@ impl<
     }
 }
 impl<
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -981,7 +981,7 @@ impl<
 
 // sepが成功した後に本体がempty failしても元に戻る仕組み
 fn run_left_sep1<
-    I: Input + Clone,
+    I: Input,
     C,
     S: Clone,
     M: Cb,
@@ -1017,16 +1017,16 @@ fn run_left_sep1<
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of("0123456789".chars()).and_then(|c: char| c.to_string().parse::<isize>().map_err(prim::Error::Message));
+/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<isize>().map_err(prim::Error::Message));
 /// let d = d.to_ref();
-/// assert_eq!(d.sep_fold1(char(','),|a,_,b| a+b).parse_ok("1,2,3,4,5".chars()), Some(15));
-/// assert_eq!(d.sep_fold1(char(','),|a,_,b| a+b).parse_ok("".chars()), None);
-/// assert_eq!(d.sep_fold1(char(','),|a,_,b| a+b).and(char(',').right(d)).parse_ok("1,2,3,4,5,6".chars()), None);
-/// assert_eq!(d.sep_fold1(char(','),|a,_,b| a+b).and(char(',')).parse_ok("1,2,3,4,".chars()), Some((10, ',')));
+/// assert_eq!(d.sep_fold1(char(','),|a,_,b| a+b).parse_ok("1,2,3,4,5"), Some(15));
+/// assert_eq!(d.sep_fold1(char(','),|a,_,b| a+b).parse_ok(""), None);
+/// assert_eq!(d.sep_fold1(char(','),|a,_,b| a+b).and(char(',').right(d)).parse_ok("1,2,3,4,5,6"), None);
+/// assert_eq!(d.sep_fold1(char(','),|a,_,b| a+b).and(char(',')).parse_ok("1,2,3,4,"), Some((10, ',')));
 ///
 /// let op = char('+').to(1).or(char('-').to(-1));
 /// let p = d.sep_fold1(op, |a,sign,b| a + sign*b);
-/// assert_eq!(p.parse_ok("1+2+3-4+5".chars()), Some(7));
+/// assert_eq!(p.parse_ok("1+2+3-4+5"), Some(7));
 /// ```
 #[derive(Clone, Copy)]
 pub struct SepFold1<P1, P2, F> {
@@ -1035,7 +1035,7 @@ pub struct SepFold1<P1, P2, F> {
     pub(crate) succ: F,
 }
 impl<
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -1054,7 +1054,7 @@ impl<
     }
 }
 impl<
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -1072,7 +1072,7 @@ impl<
     }
 }
 
-fn run_extend<O: Extend<P::Output>, I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>>(
+fn run_extend<O: Extend<P::Output>, I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>>(
     mut o: O, p: P, cont: ICont<I, C, S, M>,
 ) -> IResult<O, I, S, M> {
     let ICont { ok, config, drop } = cont;
@@ -1091,13 +1091,13 @@ fn run_extend<O: Extend<P::Output>, I: Input + Clone, C, S: Clone, M: Cb, P: Par
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(any.extend(String::new()).parse_ok("abcde".chars()), Some("abcde".to_string()));
-/// assert_eq!(char('a').extend(String::new()).parse_ok("aaabbb".chars()), Some("aaa".to_string()));
-/// assert_eq!(char('a').extend(String::new()).parse_ok("b".chars()), Some("".to_string()));
+/// assert_eq!(any.extend(String::new()).parse_ok("abcde"), Some("abcde".to_string()));
+/// assert_eq!(char('a').extend(String::new()).parse_ok("aaabbb"), Some("aaa".to_string()));
+/// assert_eq!(char('a').extend(String::new()).parse_ok("b"), Some("".to_string()));
 /// ```
 #[derive(Clone, Copy)]
 pub struct ExtendParser<O, P>(pub(crate) O, pub(crate) P);
-impl<I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output>> ParserOnce<I, C, S, M>
+impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output>> ParserOnce<I, C, S, M>
     for ExtendParser<O, P>
 {
     type Output = O;
@@ -1106,7 +1106,7 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::O
         run_extend(self.0, self.1, cont)
     }
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output> + Clone> Parser<I, C, S, M>
+impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output> + Clone> Parser<I, C, S, M>
     for ExtendParser<O, P>
 {
     #[inline]
@@ -1119,13 +1119,13 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::O
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(any.extend1(String::new()).parse_ok("abcde".chars()), Some("abcde".to_string()));
-/// assert_eq!(char('a').extend1(String::new()).parse_ok("aaabbb".chars()), Some("aaa".to_string()));
-/// assert_eq!(char('a').extend1(String::new()).parse_ok("b".chars()), None);
+/// assert_eq!(any.extend1(String::new()).parse_ok("abcde"), Some("abcde".to_string()));
+/// assert_eq!(char('a').extend1(String::new()).parse_ok("aaabbb"), Some("aaa".to_string()));
+/// assert_eq!(char('a').extend1(String::new()).parse_ok("b"), None);
 /// ```
 #[derive(Clone, Copy)]
 pub struct Extend1Parser<O, P>(pub(crate) O, pub(crate) P);
-impl<I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output>> ParserOnce<I, C, S, M>
+impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output>> ParserOnce<I, C, S, M>
     for Extend1Parser<O, P>
 {
     type Output = O;
@@ -1138,7 +1138,7 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::O
         })
     }
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output> + Clone> Parser<I, C, S, M>
+impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output> + Clone> Parser<I, C, S, M>
     for Extend1Parser<O, P>
 {
     #[inline]
@@ -1154,7 +1154,7 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::O
 
 // sepが成功した後に本体がempty failしても元に戻る仕組み
 fn run_left_sep_extend<
-    I: Input + Clone,
+    I: Input,
     C,
     S: Clone,
     M: Cb,
@@ -1195,7 +1195,7 @@ pub struct SepExtend<O, P1, P2> {
     pub(crate) p: P1,
     pub(crate) sep: P2,
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, O: Extend<P1::Output>>
+impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, O: Extend<P1::Output>>
     ParserOnce<I, C, S, M> for SepExtend<O, P1, P2>
 {
     type Output = O;
@@ -1214,7 +1214,7 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I,
     }
 }
 impl<
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -1246,7 +1246,7 @@ pub struct SepExtend1<O, P1, P2> {
     pub(crate) p: P1,
     pub(crate) sep: P2,
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, O: Extend<P1::Output>>
+impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, O: Extend<P1::Output>>
     ParserOnce<I, C, S, M> for SepExtend1<O, P1, P2>
 {
     type Output = O;
@@ -1260,7 +1260,7 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I,
     }
 }
 impl<
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -1284,13 +1284,13 @@ impl<
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of("0123456789".chars()).and_then(|c: char| c.to_string().parse::<usize>().map_err(prim::Error::Message));
+/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(prim::Error::Message));
 /// let d = d.to_ref();
 /// let p = char('(').right(tail_rec(0, move |n| d.map(move |m| Err(m+n)).or(char(')').to(Ok(n)))));
-/// assert_eq!(p.to_ref().parse_ok("(12345)".chars()), Some(15));
-/// assert_eq!(p.to_ref().parse_ok("(12)345)".chars()), Some(3));
-/// assert_eq!(p.to_ref().parse_ok("()".chars()), Some(0));
-/// assert_eq!(p.to_ref().parse_ok("(12a345)".chars()), None);
+/// assert_eq!(p.to_ref().parse_ok("(12345)"), Some(15));
+/// assert_eq!(p.to_ref().parse_ok("(12)345)"), Some(3));
+/// assert_eq!(p.to_ref().parse_ok("()"), Some(0));
+/// assert_eq!(p.to_ref().parse_ok("(12a345)"), None);
 /// ```
 #[derive(Clone, Copy)]
 pub struct TailRec<O, F>(pub(crate) O, pub(crate) F);
@@ -1331,10 +1331,10 @@ fn run_tail_rec<I: Input, C, S, M: Cb, O1, O2, P: ParserOnce<I, C, S, M, Output 
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(any.many().parse_ok("1234".chars()), Some(vec!['1','2','3','4']));
-/// assert_eq!(any.many().parse_ok("1234".chars()), Some("1234".to_string()));
-/// assert_eq!(char('a').many().parse_ok("aaabaaba".chars()), Some("aaa".to_string()));
-/// assert_eq!(char('a').many().parse_ok("".chars()), Some("".to_string()));
+/// assert_eq!(any.many().parse_ok("1234"), Some(vec!['1','2','3','4']));
+/// assert_eq!(any.many().parse_ok("1234"), Some("1234".to_string()));
+/// assert_eq!(char('a').many().parse_ok("aaabaaba"), Some("aaa".to_string()));
+/// assert_eq!(char('a').many().parse_ok(""), Some("".to_string()));
 /// ```
 pub struct Many<P, O>(P, PhantomData<fn() -> O>);
 impl<P: Clone, O> Clone for Many<P, O> {
@@ -1348,7 +1348,7 @@ impl<P: Copy, O> Copy for Many<P, O> {}
 pub fn many<O, P>(parser: P) -> Many<P, O> {
     Many(parser, PhantomData)
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser<I, C, S, M>> ParserOnce<I, C, S, M>
+impl<I: Input, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser<I, C, S, M>> ParserOnce<I, C, S, M>
     for Many<P, O>
 {
     type Output = O;
@@ -1357,7 +1357,7 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser
         self.run(cont)
     }
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser<I, C, S, M>> Parser<I, C, S, M>
+impl<I: Input, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser<I, C, S, M>> Parser<I, C, S, M>
     for Many<P, O>
 {
     #[inline]
@@ -1375,10 +1375,10 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(any.many1::<Vec<_>>().parse_ok("1234".chars()), Some(vec!['1','2','3','4']));
-/// assert_eq!(any.many1::<String>().parse_ok("1234".chars()), Some("1234".to_string()));
-/// assert_eq!(char('a').many1::<String>().parse_ok("aaabaaba".chars()), Some("aaa".to_string()));
-/// assert_eq!(char('a').many1::<String>().parse_ok("".chars()), None);
+/// assert_eq!(any.many1::<Vec<_>>().parse_ok("1234"), Some(vec!['1','2','3','4']));
+/// assert_eq!(any.many1::<String>().parse_ok("1234"), Some("1234".to_string()));
+/// assert_eq!(char('a').many1::<String>().parse_ok("aaabaaba"), Some("aaa".to_string()));
+/// assert_eq!(char('a').many1::<String>().parse_ok(""), None);
 /// ```
 pub struct Many1<P, O>(P, PhantomData<fn() -> O>);
 impl<P: Clone, O> Clone for Many1<P, O> {
@@ -1392,7 +1392,7 @@ impl<P: Copy, O> Copy for Many1<P, O> {}
 pub fn many1<O, P>(parser: P) -> Many1<P, O> {
     Many1(parser, PhantomData)
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser<I, C, S, M>> ParserOnce<I, C, S, M>
+impl<I: Input, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser<I, C, S, M>> ParserOnce<I, C, S, M>
     for Many1<P, O>
 {
     type Output = O;
@@ -1401,7 +1401,7 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser
         self.run(cont)
     }
 }
-impl<I: Input + Clone, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser<I, C, S, M>> Parser<I, C, S, M>
+impl<I: Input, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser<I, C, S, M>> Parser<I, C, S, M>
     for Many1<P, O>
 {
     #[inline]
@@ -1426,27 +1426,27 @@ impl<I: Input + Clone, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser
 /// ```
 /// use chasa::*;
 /// assert_eq!(
-///     any.many_with(|iter| iter.enumerate().collect()).parse_ok("abcde".chars()),
+///     any.many_with(|iter| iter.enumerate().collect()).parse_ok("abcde"),
 ///     Some(vec![(0,'a'),(1,'b'),(2,'c'),(3,'d'),(4,'e')])
 /// );
 /// assert_eq!(
 ///     any.many_with(|iter| iter.take(2).collect())
 ///         .and(char('c'))
-///     .parse_ok("abcde".chars()), Some(("ab".to_string(), 'c'))
+///     .parse_ok("abcde"), Some(("ab".to_string(), 'c'))
 /// );
 /// assert_eq!(
-///     any.and(char('a')).many_with(|iter| iter.collect()).parse_ok("baca".chars()),
+///     any.and(char('a')).many_with(|iter| iter.collect()).parse_ok("baca"),
 ///     Some(vec![('b','a'),('c','a')])
 /// );
 /// assert_eq!(
-///     any.and(char('a')).many_with(|iter| iter.collect::<Vec<_>>()).parse_ok("bacahh".chars()),
+///     any.and(char('a')).many_with(|iter| iter.collect::<Vec<_>>()).parse_ok("bacahh"),
 ///     None
 /// );
 /// ```
 #[derive(Clone, Copy)]
 pub struct ManyWith<P, F>(pub(crate) P, pub(crate) F);
 impl<
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -1468,7 +1468,7 @@ impl<
     }
 }
 impl<
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -1494,7 +1494,7 @@ pub struct ParserIterator<'a, 'b, P: Parser<I, C, S, M>, I: Input, C, S, M: Cb> 
     parser: P,
     ret: &'b mut Option<Result<ICont<'a, I, C, S, M>, LazyError<I, M>>>,
 }
-impl<'a, 'b, I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Iterator
+impl<'a, 'b, I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Iterator
     for ParserIterator<'a, 'b, P, I, C, S, M>
 {
     type Item = P::Output;
@@ -1532,10 +1532,10 @@ impl<'a, 'b, I: Input + Clone, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Iterat
 /// use chasa::*;
 /// let d = one_of('0'..'9').and_then(|c: char| c.to_string().parse::<isize>().map_err(prim::Error::Message));
 /// let p = d.to_ref().sep(char(','));
-/// assert_eq!(p.parse_ok("1,2,3,4,5".chars()), Some(vec![1,2,3,4,5]));
-/// assert_eq!(p.parse_ok("".chars()), Some(vec![]));
-/// assert_eq!(p.and(char(',').right(d.to_ref())).parse_ok("1,2,3,4,5,6".chars()), None);
-/// assert_eq!(p.and(char(',')).parse_ok("1,2,3,4,".chars()), Some((vec![1,2,3,4], ',')));
+/// assert_eq!(p.parse_ok("1,2,3,4,5"), Some(vec![1,2,3,4,5]));
+/// assert_eq!(p.parse_ok(""), Some(vec![]));
+/// assert_eq!(p.and(char(',').right(d.to_ref())).parse_ok("1,2,3,4,5,6"), None);
+/// assert_eq!(p.and(char(',')).parse_ok("1,2,3,4,"), Some((vec![1,2,3,4], ',')));
 /// ```
 pub struct Sep<P1, P2, O>(pub(crate) P1, pub(crate) P2, pub(crate) PhantomData<fn() -> O>);
 impl<P1: Clone, P2: Clone, O> Clone for Sep<P1, P2, O> {
@@ -1547,7 +1547,7 @@ impl<P1: Clone, P2: Clone, O> Clone for Sep<P1, P2, O> {
 impl<P1: Copy, P2: Copy, O> Copy for Sep<P1, P2, O> {}
 impl<
         O: FromIterator<P1::Output>,
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -1563,7 +1563,7 @@ impl<
 }
 impl<
         O: FromIterator<P1::Output>,
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -1589,10 +1589,10 @@ impl<
 /// use chasa::*;
 /// let d = one_of('0'..'9').and_then(|c: char| c.to_string().parse::<isize>().map_err(prim::Error::Message));
 /// let p = d.to_ref().sep1(char(','));
-/// assert_eq!(p.parse_ok("1,2,3,4,5".chars()), Some(vec![1,2,3,4,5]));
-/// assert_eq!(p.parse_ok("".chars()), None);
-/// assert_eq!(p.and(char(',').right(d.to_ref())).parse_ok("1,2,3,4,5,6".chars()), None);
-/// assert_eq!(p.and(char(',')).parse_ok("1,2,3,4,".chars()), Some((vec![1,2,3,4], ',')));
+/// assert_eq!(p.parse_ok("1,2,3,4,5"), Some(vec![1,2,3,4,5]));
+/// assert_eq!(p.parse_ok(""), None);
+/// assert_eq!(p.and(char(',').right(d.to_ref())).parse_ok("1,2,3,4,5,6"), None);
+/// assert_eq!(p.and(char(',')).parse_ok("1,2,3,4,"), Some((vec![1,2,3,4], ',')));
 /// ```
 pub struct Sep1<P1, P2, O>(pub(crate) P1, pub(crate) P2, pub(crate) PhantomData<fn() -> O>);
 impl<P1: Clone, P2: Clone, O> Clone for Sep1<P1, P2, O> {
@@ -1604,7 +1604,7 @@ impl<P1: Clone, P2: Clone, O> Clone for Sep1<P1, P2, O> {
 impl<P1: Copy, P2: Copy, O> Copy for Sep1<P1, P2, O> {}
 impl<
         O: FromIterator<P1::Output>,
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -1620,7 +1620,7 @@ impl<
 }
 impl<
         O: FromIterator<P1::Output>,
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -1658,19 +1658,19 @@ impl<
 /// let d = d.to_ref();
 /// assert_eq!(
 ///     d.sep_with(char(','), |iter| iter.take(2).collect())
-///         .and(str(",3,4,5".chars(), true))
-///         .parse_ok("1,2,3,4,5".chars()),
+///         .and(str(",3,4,5", true))
+///         .parse_ok("1,2,3,4,5"),
 ///     Some((vec![1,2], true))
 /// );
 /// assert_eq!(
 ///     d.sep_with(char(','), |iter| iter.collect())
-///         .parse_ok("1,2,3,4,".chars()),
+///         .parse_ok("1,2,3,4,"),
 ///     Some(vec![1,2,3,4])
 /// );
 /// ```
 pub struct SepWith<P1, P2, F>(pub(crate) P1, pub(crate) P2, pub(crate) F);
 impl<
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -1693,7 +1693,7 @@ impl<
     }
 }
 impl<
-        I: Input + Clone,
+        I: Input,
         C,
         S: Clone,
         M: Cb,
@@ -1721,7 +1721,7 @@ pub struct ParserSepIterator<'a, 'b, P1: Parser<I, C, S, M>, P2: Parser<I, C, S,
     is_first: bool,
     ret: &'b mut Option<Result<ICont<'a, I, C, S, M>, LazyError<I, M>>>,
 }
-impl<'a, 'b, I: Input + Clone, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>> Iterator
+impl<'a, 'b, I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>> Iterator
     for ParserSepIterator<'a, 'b, P1, P2, I, C, S, M>
 {
     type Item = P1::Output;

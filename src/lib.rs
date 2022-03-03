@@ -14,7 +14,7 @@
 //! // Then add the '+' separator to it.
 //! let sum = prod.sep_fold1(char('+'), |a,_,b| a + b);
 //! // Can parse simple addition and multiplication expressions.
-//! assert_eq!(sum.parse_ok("1+2*3+4".chars()), Some(11));
+//! assert_eq!(sum.parse_ok("1+2*3+4"), Some(11));
 //! ```
 //!
 //! Like the relationship between `Fn` and `FnOnce`, we have `Parser` and `ParserOnce` and write a parser to manipulate the iterator.
@@ -37,7 +37,7 @@
 //!     })
 //! }
 //! assert_eq!(
-//!     sexp_like.parse_easy("(defun fact (x) (if (zerop x) 1 (* x (fact (- x 1)))))".chars()),
+//!     sexp_like.parse_easy("(defun fact (x) (if (zerop x) 1 (* x (fact (- x 1)))))"),
 //!     Ok(SExp::List(vec![
 //!         SExp::Term("defun".to_string()),
 //!         SExp::Term("fact".to_string()),
@@ -92,16 +92,16 @@
 //!         '"' => k.then(string_char.many_with(|iter| iter.map_while(|x| x).collect())).map(JSON::String),
 //!         '-' => k.then(any).bind(num_parser).map(|n| JSON::Number(-n)),
 //!         c @ '0'..='9' => k.then(num_parser(c)).map(JSON::Number),
-//!         't' => k.then(str("rue".chars(), JSON::True)),
-//!         'f' => k.then(str("alse".chars(), JSON::False)),
-//!         'n' => k.then(str("ull".chars(), JSON::Null)),
+//!         't' => k.then(str("rue", JSON::True)),
+//!         'f' => k.then(str("alse", JSON::False)),
+//!         'n' => k.then(str("ull", JSON::Null)),
 //!         c => k.fail(prim::Error::Unexpect(c)),
 //!     })
 //!     .between(whitespace, whitespace)
 //! }
 //!
 //! fn whitespace<I: Input<Item = char> + Clone>() -> impl EasyParser<I, Output = ()> {
-//!     one_of("\t\r\n ".chars()).skip_many()
+//!     one_of("\t\r\n ").skip_many()
 //! }
 //!
 //! fn string_char<I: Input<Item = char> + Clone>() -> impl EasyParser<I, Output = Option<char>> {
@@ -153,8 +153,8 @@
 //!         c => k.fail(prim::Error::Unexpect(c)),
 //!     })
 //!     .bind_once(move |mut str| {
-//!         one_of("eE".chars()).or_not().case_once(move |e,k| match e {
-//!             Some(_) => k.then(one_of("+-".chars()).or_not()).bind(move |pm| {
+//!         one_of("eE").or_not().case_once(move |e,k| match e {
+//!             Some(_) => k.then(one_of("+-").or_not()).bind(move |pm| {
 //!                 str.push('e');
 //!                 str.extend(pm);
 //!                 digit.extend(str)
@@ -166,7 +166,7 @@
 //! }
 //!
 //! assert_eq!(
-//!     json_parser.parse_ok("{\"key1\": \"value1\", \"key2\": [ true, \"value3\" ], \"key3\": { \"key4\": 15e1 }}".chars()),
+//!     json_parser.parse_ok("{\"key1\": \"value1\", \"key2\": [ true, \"value3\" ], \"key3\": { \"key4\": 15e1 }}"),
 //!     Some(JSON::Object(vec![
 //!         ("key1".to_string(), JSON::String("value1".to_string())),
 //!         ("key2".to_string(), JSON::Array(vec![

@@ -139,7 +139,7 @@ pub fn is_space(c: &char) -> bool {
 
 /// Accepts a single newline character, but treats `"\r\n"` as one.
 #[inline(always)]
-pub fn newline<I: Input<Item = char> + Clone, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
+pub fn newline<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
     no_state(satisfy_map(get_nl_kind).case(|kind, k| match kind {
         NLKind::LineFeed | NLKind::Other => k.to(()),
         NLKind::CarriageReturn => k.then(char('\n').or_not().to(())),
@@ -170,24 +170,24 @@ pub fn space<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M
 
 /// Greedily accepts a sequence of whitespace characters that do not contain a newline character.
 #[inline]
-pub fn no_break_ws<I: Input<Item = char> + Clone, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
+pub fn no_break_ws<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
     no_state(no_break.skip_many())
 }
 
 /// It greedily accepts a sequence of one or more whitespace characters, not including newline characters.
 #[inline]
-pub fn no_break_ws1<I: Input<Item = char> + Clone, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
+pub fn no_break_ws1<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
     no_state(no_break.skip_many1())
 }
 
 /// A sequence of whitespace characters is greedily accepted.
 #[inline(always)]
-pub fn ws<I: Input<Item = char> + Clone, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
+pub fn ws<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
     no_state(satisfy_map(get_sp_kind).skip_many())
 }
 /// A sequence of one or more whitespace characters will be greedily accepted.
 #[inline(always)]
-pub fn ws1<I: Input<Item = char> + Clone, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
+pub fn ws1<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
     no_state(satisfy_map(get_sp_kind).skip_many1())
 }
 
@@ -205,7 +205,7 @@ impl NLS {
 // まだspaceの種類とか考えずにやるだけ
 /// Takes a sequence of whitespace characters and returns the number of times a newline was broken followed by a non-newline whitespace.
 #[inline]
-pub fn nls<I: Input<Item = char> + Clone, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = NLS> {
+pub fn nls<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = NLS> {
     no_state(tail_rec((NLS::new(), false), |(nls @ NLS { newline, space }, after_r)| {
         satisfy_map(get_sp_kind).or_not().map(move |kind| match kind {
             None => Ok(nls),
@@ -231,6 +231,7 @@ impl Display for LineColumn {
     }
 }
 
+#[derive(Clone)]
 /// A position with rows and columns.
 pub struct LineColumnCounter {
     lc: LineColumn,

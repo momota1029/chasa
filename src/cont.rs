@@ -52,7 +52,7 @@ impl<'a, I: Input, C, S, M: Cb> ICont<'a, I, C, S, M> {
         }
     }
 }
-impl<'a, I: Input + Clone, C, S: Clone, M: Cb> ICont<'a, I, C, S, M> {
+impl<'a, I: Input, C, S: Clone, M: Cb> ICont<'a, I, C, S, M> {
     #[inline]
     pub fn before<P: ParserOnce<I, C, S, M>>(self, p: P) -> IReturn<'a, P::Output, I, C, S, M> {
         self.then(before(p))
@@ -165,7 +165,7 @@ impl<'a, O, I: Input, C, S, M: Cb> IReturn<'a, O, I, C, S, M> {
     }
 }
 
-impl<'a, O, I: Input + Clone + 'a, C, S: Clone + 'a, M: Cb> IReturn<'a, O, I, C, S, M> {
+impl<'a, O, I: Input, C, S: Clone, M: Cb> IReturn<'a, O, I, C, S, M> {
     #[inline]
     pub fn fold<P: Parser<I, C, S, M>>(self, p: P, f: impl Fn(O, P::Output) -> O) -> IReturn<'a, O, I, C, S, M> {
         self.case(|o, k| k.fold(o, p, f))

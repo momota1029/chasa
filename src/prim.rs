@@ -1,10 +1,12 @@
-use std::{fmt::Display, marker::PhantomData};
+use std::{fmt::Display, marker::PhantomData, ops::RangeBounds};
 
 use either::Either;
 
 use crate::{
     error::{Builder, Builder as Eb, CustomBuilder as Cb},
-    ICont, IOk, IResult, IReturn, Input, Parser, ParserOnce,
+    input::IntoChars,
+    util::run_satisfy,
+    ICont, IOk, IResult, IReturn, Input, LazyError, Parser, ParserOnce,
 };
 
 impl<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, F: FnOnce() -> P> ParserOnce<I, C, S, M> for F {
@@ -29,15 +31,15 @@ impl<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, F: Fn() -> P> Parser<I, C
 ///     // Note the reverse order
 ///     parser_once(|k| k.then(any.and(p).map(|(x,mut xs)| {xs.push(x); xs}).or(pure(String::new()))))
 /// }
-/// assert_eq!(p.parse_ok("abcd".chars()), Some("dcba".to_string()));
-/// assert_eq!(p.parse_ok("stressed".chars()), Some("desserts".to_string()));
+/// assert_eq!(p.parse_ok("abcd"), Some("dcba".to_string()));
+/// assert_eq!(p.parse_ok("stressed"), Some("desserts".to_string()));
 ///
 /// // Straightforward implementation without wasting stacks
 /// let q = tail_rec(vec![], |mut xs| any.or_not().map_once(move |x| match x {
 ///     Some(x) => { xs.push(x); Err(xs) },
 ///     None => Ok(xs)
 /// })).map(|xs| xs.iter().rev().collect::<String>());
-/// assert_eq!(q.parse_ok("stressed".chars()), Some("desserts".to_string()));
+/// assert_eq!(q.parse_ok("stressed"), Some("desserts".to_string()));
 /// ```
 #[derive(Clone, Copy)]
 pub struct FnParser<F>(F);
@@ -72,8 +74,8 @@ impl<O, I: Input, C, S, M: Cb, F: Fn(ICont<I, C, S, M>) -> IReturn<O, I, C, S, M
 /// use chasa::*;
 /// let p = char('a').and(char('b'));
 /// let p = p.to_ref();
-/// assert_eq!(p.parse_ok("ab".chars()), Some(('a','b')));
-/// assert_eq!(many(p).parse_ok("abababc".chars()), Some(vec![('a','b'),('a','b'),('a','b')]));
+/// assert_eq!(p.parse_ok("ab"), Some(('a','b')));
+/// assert_eq!(many(p).parse_ok("abababc"), Some(vec![('a','b'),('a','b'),('a','b')]));
 /// ```
 pub struct RefParser<'a, P>(pub(crate) &'a P);
 impl<'a, P> Clone for RefParser<'a, P> {
@@ -139,7 +141,7 @@ pub enum Error<E> {
 /// A parser that never fails. You can choose between `Error::Unexpect`, which prints "Unexpected [token]", and `Error::Message`, which prints "[msg]".
 /// ```
 /// use chasa::*;
-/// assert_eq!(fail::<(),_>(prim::Error::Unexpect("chasa")).parse_easy("".chars()),Err("unexpected chasa at 0".to_string()));
+/// assert_eq!(fail::<(),_>(prim::Error::Unexpect("chasa")).parse_easy(""),Err("unexpected chasa at 0".to_string()));
 /// ```
 pub struct Fail<O, E>(Error<E>, PhantomData<fn() -> O>);
 impl<O, E: Clone> Clone for Fail<O, E> {
@@ -175,7 +177,7 @@ impl<O, I: Input, C, S, M: Cb, E: Display + Clone + 'static> Parser<I, C, S, M> 
 /// An absolute failure parser, which delays error messages by passing a closure. You can choose between `Error::Unexpect` to show "Unexpected [token]", and `Error::Message` to show "[msg]".
 /// ```
 /// use chasa::*;
-/// assert_eq!(fail_with::<(),_,_>(prim::Error::Unexpect(||"chasa")).parse_easy("".chars()),Err("unexpected chasa at 0".to_string()));
+/// assert_eq!(fail_with::<(),_,_>(prim::Error::Unexpect(||"chasa")).parse_easy(""),Err("unexpected chasa at 0".to_string()));
 /// ```
 pub struct FailWith<O, F>(Error<F>, PhantomData<fn() -> O>);
 impl<O, F: Clone> Clone for FailWith<O, F> {
@@ -212,8 +214,8 @@ impl<O, I: Input, C, S, M: Cb, E: Display, F: Fn() -> E + Clone + 'static> Parse
 /// The parser that matches the end of the input.
 /// ```
 /// use chasa::*;
-/// assert_eq!(eoi.parse_easy("".chars()), Ok(()));
-/// assert_eq!(eoi.parse_easy("a2".chars()), Err("unexpected a, expecting eoi at 0".to_string()))
+/// assert_eq!(eoi.parse_easy(""), Ok(()));
+/// assert_eq!(eoi.parse_easy("a2"), Err("unexpected a, expecting eoi at 0".to_string()))
 /// ```
 pub struct EoI<I, C, S, M>(PhantomData<fn() -> (I, C, S, M)>);
 impl<I, C, S, M> Clone for EoI<I, C, S, M> {
@@ -250,8 +252,8 @@ impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb> Parser<I, C, S, M> fo
 /// A parser that takes a single arbitrary character.
 /// ```
 /// use chasa::*;
-/// assert_eq!(any.parse_ok("12".chars()), Some('1'));
-/// assert_eq!(any.parse_ok("".chars()), None)
+/// assert_eq!(any.parse_ok("12"), Some('1'));
+/// assert_eq!(any.parse_ok(""), None)
 /// ```
 pub struct Any<I, C, S, M>(PhantomData<fn() -> (I, C, S, M)>);
 impl<I, C, S, M> Clone for Any<I, C, S, M> {
@@ -276,6 +278,7 @@ impl<I: Input, C, S, M: Cb> Parser<I, C, S, M> for Any<I, C, S, M> {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
         let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
+
         if cont.ok.cutted {
             drop()
         }
@@ -294,8 +297,8 @@ impl<I: Input, C, S, M: Cb> Parser<I, C, S, M> for Any<I, C, S, M> {
 /// If the given character matches the input character, it is accepted.
 /// ```
 /// use chasa::*;
-/// assert_eq!(char('a').parse_easy("a2".chars()), Ok('a'));
-/// assert_eq!(char('1').parse_easy("a2".chars()), Err("unexpected a, expecting 1 at 0..1".to_string()))
+/// assert_eq!(char('a').parse_easy("a2"), Ok('a'));
+/// assert_eq!(char('1').parse_easy("a2"), Err("unexpected a, expecting 1 at 0..1".to_string()))
 /// ```
 pub struct Char<Item, I, C, S, M>(Item, PhantomData<fn() -> (I, C, S, M)>);
 impl<Item: Clone, I, C, S, M> Clone for Char<Item, I, C, S, M> {
@@ -323,22 +326,9 @@ impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::It
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
         let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
-        if cont.ok.cutted {
-            drop()
-        }
-        let (index, pos) = (input.index(), input.pos());
-        match match input.next() {
-            None => Err(Eb::unexpected_eoi().at::<I>(index, pos, None)),
-            Some(Err(e)) => Err(Eb::message(e).at::<I>(index, pos, None)),
-            Some(Ok(item)) => {
-                if &self.0 == &item {
-                    drop();
-                    Ok(item)
-                } else {
-                    Err(Eb::unexpected(item).at::<I>(input.index(), pos, Some(input.pos())))
-                }
-            },
-        } {
+
+        match run_satisfy(&mut input, drop, cont.ok.cutted, |item| if &self.0 == &item { Ok(item) } else { Err(item) })
+        {
             Err(e) => Err(e.label(format!("{}", self.0)).or_merge(err)),
             Ok(item) => Ok((item, IOk { input, state, err, cutted: true })),
         }
@@ -348,8 +338,8 @@ impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::It
 /// It takes one character from the input, compares it with the given iterator, and accepts it if any of the characters match.
 /// ```
 /// use chasa::*;
-/// assert_eq!(one_of("abc".chars()).parse_ok("a2".chars()), Some('a'));
-/// assert_eq!(one_of("def".chars()).parse_ok("a2".chars()), None)
+/// assert_eq!(one_of("abc").parse_ok("a2"), Some('a'));
+/// assert_eq!(one_of("def").parse_ok("a2"), None)
 /// ```
 pub struct OneOf<Iter, Item, I, C, S, M>(Iter, PhantomData<fn() -> (Item, I, C, S, M)>);
 impl<Iter: Clone, Item, I, C, S, M> Clone for OneOf<Iter, Item, I, C, S, M> {
@@ -360,10 +350,20 @@ impl<Iter: Clone, Item, I, C, S, M> Clone for OneOf<Iter, Item, I, C, S, M> {
 }
 impl<Iter: Copy, Item, I, C, S, M> Copy for OneOf<Iter, Item, I, C, S, M> {}
 #[inline]
-pub fn one_of<Iter: IntoIterator<Item = Item>, Item, I, C, S, M>(iter: Iter) -> OneOf<Iter, Item, I, C, S, M> {
-    OneOf(iter, PhantomData)
+pub fn one_of<Iter, Item, I, C, S, M>(chars: Iter) -> OneOf<Iter, Item, I, C, S, M> {
+    OneOf(chars, PhantomData)
 }
-impl<I: Input, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoIterator<Item = Item>> ParserOnce<I, C, S, M>
+impl<I: Input, C, S, M: Cb, Item, Iter> Parser<I, C, S, M> for OneOf<Iter, Item, I, C, S, M>
+where
+    I::Item: Display + 'static,
+    Self: ParserOnce<I, C, S, M, Output = I::Item> + Clone,
+{
+    #[inline]
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
+        self.clone().run_once(cont)
+    }
+}
+impl<I: Input, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoChars<Item = Item>> ParserOnce<I, C, S, M>
     for OneOf<Iter, Item, I, C, S, M>
 where
     I::Item: Display + 'static,
@@ -372,41 +372,68 @@ where
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
         let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
-        if cont.ok.cutted {
-            drop()
-        }
-        let (index, pos) = (input.index(), input.pos());
-        match input.next() {
-            None => Err(Eb::unexpected_eoi().at::<I>(index, pos, None).or_merge(err)),
-            Some(Err(e)) => Err(Eb::message(e).at::<I>(index, pos, None).or_merge(err)),
-            Some(Ok(item)) => {
-                for compared in self.0.into_iter() {
-                    if &compared == &item {
-                        drop();
-                        return Ok((item, IOk { input, state, err, cutted: true }));
-                    }
+        match run_satisfy(&mut input, drop, cont.ok.cutted, |item| {
+            for compared in self.0.into_chars() {
+                if &compared == &item {
+                    return Ok(item);
                 }
-                Err(Eb::unexpected(item).at::<I>(input.index(), pos, Some(input.pos())).or_merge(err))
-            },
+            }
+            Err(item)
+        }) {
+            Ok(item) => Ok((item, IOk { input, state, err, cutted: true })),
+            Err(e) => Err(e.or_merge(err)),
         }
     }
 }
-impl<I: Input, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoIterator<Item = Item> + Clone> Parser<I, C, S, M>
-    for OneOf<Iter, Item, I, C, S, M>
-where
-    I::Item: Display + 'static,
-{
-    #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
-        self.clone().run_once(cont)
+macro_rules! one_of_range {
+    ($item:ident, $t:ty) =>{
+        impl<I: Input, C, S, M: Cb, $item: PartialOrd<I::Item>> ParserOnce<I, C, S, M>
+            for OneOf<$t, Item, I, C, S, M>
+        where
+            I::Item: PartialOrd<Item> + Display + 'static,
+        {
+            type Output = I::Item;
+            #[inline]
+            fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
+                let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
+                match run_satisfy(
+                    &mut input,
+                    drop,
+                    cont.ok.cutted,
+                    |item| {
+                        if self.0.contains(&item) {
+                            Ok(item)
+                        } else {
+                            Err(item)
+                        }
+                    },
+                ) {
+                    Ok(item) => Ok((item, IOk { input, state, err, cutted: true })),
+                    Err(e) => Err(e.or_merge(err)),
+                }
+            }
+        }
+    };
+    ($item:ident, $t:ty, $($ts:ty),+) => {
+        one_of_range!($item,$t);
+        one_of_range!($item,$($ts),+);
     }
 }
+one_of_range!(
+    Item,
+    std::ops::Range<Item>,
+    std::ops::RangeFrom<Item>,
+    std::ops::RangeTo<Item>,
+    std::ops::RangeFull,
+    std::ops::RangeInclusive<Item>,
+    std::ops::RangeToInclusive<Item>
+);
 
 /// It takes one character from the input, compares it with the given iterator, and only accepts if none of the characters match.
 /// ```
 /// use chasa::*;
-/// assert_eq!(none_of("abc".chars()).parse_ok("a2".chars()), None);
-/// assert_eq!(none_of("def".chars()).parse_ok("a2".chars()), Some('a'))
+/// assert_eq!(none_of("abc").parse_ok("a2"), None);
+/// assert_eq!(none_of("def").parse_ok("a2"), Some('a'))
 /// ```
 pub struct NoneOf<Iter, Item, I, C, S, M>(Iter, PhantomData<fn() -> (Item, I, C, S, M)>);
 impl<Iter: Clone, Item, I, C, S, M> Clone for NoneOf<Iter, Item, I, C, S, M> {
@@ -417,17 +444,21 @@ impl<Iter: Clone, Item, I, C, S, M> Clone for NoneOf<Iter, Item, I, C, S, M> {
 }
 impl<Iter: Copy, Item, I, C, S, M> Copy for NoneOf<Iter, Item, I, C, S, M> {}
 #[inline]
-pub fn none_of<Iter: IntoIterator<Item = Item>, Item, I, C, S, M>(iter: Iter) -> NoneOf<Iter, Item, I, C, S, M> {
-    NoneOf(iter, PhantomData)
+pub fn none_of<Iter: IntoChars<Item = Item>, Item, I, C, S, M>(chars: Iter) -> NoneOf<Iter, Item, I, C, S, M> {
+    NoneOf(chars, PhantomData)
 }
-impl<
-        I: Input<Item = impl Display + 'static>,
-        C,
-        S,
-        M: Cb,
-        Item: PartialEq<I::Item>,
-        Iter: IntoIterator<Item = Item>,
-    > ParserOnce<I, C, S, M> for NoneOf<Iter, Item, I, C, S, M>
+impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item, Iter> Parser<I, C, S, M>
+    for NoneOf<Iter, Item, I, C, S, M>
+where
+    Self: ParserOnce<I, C, S, M, Output = I::Item> + Clone,
+{
+    #[inline]
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
+        self.clone().run_once(cont)
+    }
+}
+impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoChars<Item = Item>>
+    ParserOnce<I, C, S, M> for NoneOf<Iter, Item, I, C, S, M>
 {
     type Output = I::Item;
     #[inline]
@@ -441,7 +472,7 @@ impl<
             None => Err(Eb::unexpected_eoi().at::<I>(index, pos, None).or_merge(err)),
             Some(Err(e)) => Err(Eb::message(e).at::<I>(index, pos, None).or_merge(err)),
             Some(Ok(item)) => {
-                for compared in self.0.into_iter() {
+                for compared in self.0.into_chars() {
                     if &compared == &item {
                         return Err(Eb::unexpected(item).at::<I>(input.index(), pos, Some(input.pos())).or_merge(err));
                     }
@@ -451,28 +482,50 @@ impl<
         }
     }
 }
-impl<
-        I: Input<Item = impl Display + 'static>,
-        C,
-        S,
-        M: Cb,
-        Item: PartialEq<I::Item>,
-        Iter: IntoIterator<Item = Item> + Clone,
-    > Parser<I, C, S, M> for NoneOf<Iter, Item, I, C, S, M>
-{
-    #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
-        self.clone().run_once(cont)
+macro_rules! none_of_range {
+    ($item:ident,$t:ty) => {
+        impl<I: Input<Item = impl PartialOrd<Item> + Display + 'static>, C, S, M: Cb, $item: PartialOrd<I::Item>> ParserOnce<I, C, S, M>
+            for NoneOf<$t, Item, I, C, S, M>
+        {
+            type Output = I::Item;
+            #[inline]
+            fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
+                let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
+                match run_satisfy(&mut input, drop, cont.ok.cutted, |item| {
+                    if !self.0.contains(&item) {
+                        Ok(item)
+                    } else {
+                        Err(item)
+                    }
+                }) {
+                    Ok(item) => Ok((item, IOk { input, state, err, cutted: true })),
+                    Err(e) => Err(e.or_merge(err)),
+                }
+            }
+        }
+    };
+    ($item:ident, $t:ty, $($ts:ty),+) => {
+        none_of_range!($item,$t);
+        none_of_range!($item,$($ts),+);
     }
 }
+none_of_range!(
+    Item,
+    std::ops::Range<Item>,
+    std::ops::RangeFrom<Item>,
+    std::ops::RangeTo<Item>,
+    std::ops::RangeFull,
+    std::ops::RangeInclusive<Item>,
+    std::ops::RangeToInclusive<Item>
+);
 
 /// A parser that compares character iterators and input as they are consumed together, and accepts them if they all match.
 /// ```
 /// use chasa::*;
-/// assert_eq!(str("a".chars(), 1).parse_ok("a2".chars()), Some(1));
-/// assert_eq!(str("a2".chars(), 1).parse_ok("a2".chars()), Some(1));
-/// assert_eq!(str("a23".chars(), 1).parse_ok("a2".chars()), None);
-/// assert_eq!(str("a3".chars(), 1).or(str("a".chars(), 2)).parse_ok("a2".chars()), Some(2));
+/// assert_eq!(str("a", 1).parse_ok("a2"), Some(1));
+/// assert_eq!(str("a2", 1).parse_ok("a2"), Some(1));
+/// assert_eq!(str("a23", 1).parse_ok("a2"), None);
+/// assert_eq!(str("a3", 1).or(str("a", 2)).parse_ok("a2"), Some(2));
 /// ```
 pub struct String<Iter, O, I, C, S, M>(Iter, O, PhantomData<fn() -> (I, C, S, M)>);
 impl<Iter: Clone, O: Clone, I, C, S, M> Clone for String<Iter, O, I, C, S, M> {
@@ -482,7 +535,7 @@ impl<Iter: Clone, O: Clone, I, C, S, M> Clone for String<Iter, O, I, C, S, M> {
     }
 }
 impl<Iter: Copy, O: Copy, I, C, S, M> Copy for String<Iter, O, I, C, S, M> {}
-pub fn str<Iter: IntoIterator<Item = I::Item>, O, I: Input, C, S, M: Cb>(
+pub fn str<Iter: IntoChars<Item = I::Item>, O, I: Input, C, S, M: Cb>(
     iter: Iter, value: O,
 ) -> String<Iter, O, I, C, S, M> {
     String(iter, value, PhantomData)
@@ -493,7 +546,7 @@ impl<
         C,
         S,
         M: Cb,
-        Iter: IntoIterator<Item = impl PartialEq<I::Item> + Display + 'static>,
+        Iter: IntoChars<Item = impl PartialEq<I::Item> + Display + 'static>,
     > ParserOnce<I, C, S, M> for String<Iter, O, I, C, S, M>
 {
     type Output = O;
@@ -501,7 +554,7 @@ impl<
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
         let mut is_first = true;
-        for str_c in self.0 {
+        for str_c in self.0.into_chars() {
             if is_first {
                 if cont.ok.cutted {
                     drop()
@@ -531,7 +584,7 @@ impl<
         C,
         S,
         M: Cb,
-        Iter: IntoIterator<Item = impl PartialEq<I::Item> + Display + 'static> + Clone,
+        Iter: IntoChars<Item = impl PartialEq<I::Item> + Display + 'static> + Clone,
     > Parser<I, C, S, M> for String<Iter, O, I, C, S, M>
 {
     #[inline]

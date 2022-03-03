@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display};
 
 use crate::error::Nil;
 
-pub trait Input {
+pub trait Input: Clone {
     type Item;
     type Error: std::error::Error + 'static;
     type Pos: Ord;
@@ -10,7 +10,7 @@ pub trait Input {
     fn pos(&self) -> Self::Pos;
     fn next(&mut self) -> Option<Result<Self::Item, Self::Error>>;
 }
-pub trait Counter<T> {
+pub trait Counter<T>: Clone {
     type Pos: Display + Debug + Copy + Ord;
     type Error: std::error::Error + 'static;
     fn new() -> Self;
@@ -43,7 +43,7 @@ impl<T> Counter<T> for usize {
 }
 #[derive(Clone)]
 pub struct FromIterator<I, C>(I, C, usize);
-impl<I: Iterator, C: Counter<I::Item>> Input for FromIterator<I, C> {
+impl<I: Iterator + Clone, C: Counter<I::Item>> Input for FromIterator<I, C> {
     type Item = I::Item;
     type Error = C::Error;
     type Pos = C::Pos;
@@ -65,6 +65,28 @@ impl<I: Iterator, C: Counter<I::Item>> Input for FromIterator<I, C> {
     }
 }
 
+pub trait IntoChars {
+    type Item;
+    type Iterator: Iterator<Item = Self::Item>;
+    fn into_chars(self) -> Self::Iterator;
+}
+impl<'a> IntoChars for &'a str {
+    type Item = char;
+    type Iterator = std::str::Chars<'a>;
+    #[inline]
+    fn into_chars(self) -> Self::Iterator {
+        self.chars()
+    }
+}
+impl<'a, T: Clone> IntoChars for &'a [T] {
+    type Item = T;
+    type Iterator = std::iter::Cloned<std::slice::Iter<'a, T>>;
+    #[inline]
+    fn into_chars(self) -> Self::Iterator {
+        self.into_iter().cloned()
+    }
+}
+
 pub trait IntoInput {
     type Item;
     type Error;
@@ -81,21 +103,22 @@ impl<I: Input> IntoInput for I {
         self
     }
 }
-impl<'a> IntoInput for std::str::Chars<'a> {
+impl<'a> IntoInput for &'a str {
     type Item = char;
     type Error = Nil;
     type Pos = usize;
     type IntoI = FromIterator<std::str::Chars<'a>, usize>;
     fn into_input(self) -> Self::IntoI {
-        usize::with_iter(self)
+        usize::with_iter(self.chars())
     }
 }
-impl<'a> IntoInput for std::str::Bytes<'a> {
-    type Item = u8;
+impl<'a, T: Clone> IntoInput for &'a [T] {
+    type Item = T;
     type Error = Nil;
     type Pos = usize;
-    type IntoI = FromIterator<std::str::Bytes<'a>, usize>;
+    type IntoI = FromIterator<std::iter::Cloned<std::slice::Iter<'a, T>>, usize>;
+    #[inline]
     fn into_input(self) -> Self::IntoI {
-        usize::with_iter(self)
+        usize::with_iter(self.into_iter().cloned())
     }
 }
