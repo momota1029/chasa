@@ -295,7 +295,7 @@ impl<I: Input, C, S, M: Cb> Parser<I, C, S, M> for Any<I, C, S, M> {
 /// ```
 /// use chasa::*;
 /// assert_eq!(char('a').parse_easy("a2".chars()), Ok('a'));
-/// assert_eq!(char('1').parse_easy("a2".chars()), Err("unexpected a at 0..1".to_string()))
+/// assert_eq!(char('1').parse_easy("a2".chars()), Err("unexpected a, expecting 1 at 0..1".to_string()))
 /// ```
 pub struct Char<Item, I, C, S, M>(Item, PhantomData<fn() -> (I, C, S, M)>);
 impl<Item: Clone, I, C, S, M> Clone for Char<Item, I, C, S, M> {
@@ -308,7 +308,7 @@ impl<Item: Copy, I, C, S, M> Copy for Char<Item, I, C, S, M> {}
 pub fn char<Item, I, C, S, M>(char: Item) -> Char<Item, I, C, S, M> {
     Char(char, PhantomData)
 }
-impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item>> ParserOnce<I, C, S, M>
+impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item> + Display> ParserOnce<I, C, S, M>
     for Char<Item, I, C, S, M>
 {
     type Output = I::Item;
@@ -317,7 +317,7 @@ impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::It
         self.run(cont)
     }
 }
-impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item>> Parser<I, C, S, M>
+impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item> + Display> Parser<I, C, S, M>
     for Char<Item, I, C, S, M>
 {
     #[inline]
@@ -327,17 +327,20 @@ impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::It
             drop()
         }
         let (index, pos) = (input.index(), input.pos());
-        match input.next() {
-            None => Err(Eb::unexpected_eoi().at::<I>(index, pos, None).or_merge(err)),
-            Some(Err(e)) => Err(Eb::message(e).at::<I>(index, pos, None).or_merge(err)),
+        match match input.next() {
+            None => Err(Eb::unexpected_eoi().at::<I>(index, pos, None)),
+            Some(Err(e)) => Err(Eb::message(e).at::<I>(index, pos, None)),
             Some(Ok(item)) => {
                 if &self.0 == &item {
                     drop();
-                    Ok((item, IOk { input, state, err, cutted: true }))
+                    Ok(item)
                 } else {
-                    Err(Eb::unexpected(item).at::<I>(input.index(), pos, Some(input.pos())).or_merge(err))
+                    Err(Eb::unexpected(item).at::<I>(input.index(), pos, Some(input.pos())))
                 }
             },
+        } {
+            Err(e) => Err(e.label(format!("{}", self.0)).or_merge(err)),
+            Ok(item) => Ok((item, IOk { input, state, err, cutted: true })),
         }
     }
 }

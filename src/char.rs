@@ -132,6 +132,11 @@ pub fn get_sp_kind(c: &char) -> Option<SpaceKind> {
     })
 }
 
+#[inline(always)]
+pub fn is_space(c: &char) -> bool {
+    get_sp_kind(c).is_some()
+}
+
 /// Accepts a single newline character, but treats `"\r\n"` as one.
 #[inline(always)]
 pub fn newline<I: Input<Item = char> + Clone, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {

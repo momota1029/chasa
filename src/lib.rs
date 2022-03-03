@@ -17,6 +17,46 @@
 //! assert_eq!(sum.parse_ok("1+2*3+4".chars()), Some(11));
 //! ```
 //!
+//! To define and re-use the syntax recursively, use a function (which implements the `Parser` trait) that returns `impl ParserOnce`.
+//!
+//! In the following example, `EasyParser` is a special case alias for `ParserOnce`.
+//! ```
+//! use chasa::*;
+//! #[derive(Debug, PartialEq, Eq)]
+//! enum SExp {
+//!     Term(String),
+//!     List(Vec<SExp>),
+//! }
+//! fn sexp_like<I: Input<Item = char> + Clone>() -> impl EasyParser<I, Output = SExp> {
+//!     // The `parser` is to prevent recursion of existential types (removing it will crash the current compiler).
+//!     parser(|k| {
+//!         let term = satisfy(|c: &char| !char::is_space(c) && c != &'(' && c != &')').many1();
+//!         k.then(term.map(SExp::Term).or(sexp_like.sep(ws1).between(char('('), char(')')).map(SExp::List)))
+//!     })
+//! }
+//! assert_eq!(
+//!     sexp_like.parse_easy("(defun fact (x) (if (zerop x) 1 (* x (fact (- x 1)))))".chars()),
+//!     Ok(SExp::List(vec![
+//!         SExp::Term("defun".to_string()),
+//!         SExp::Term("fact".to_string()),
+//!         SExp::List(vec![SExp::Term("x".to_string())]),
+//!         SExp::List(vec![
+//!             SExp::Term("if".to_string()),
+//!             SExp::List(vec![SExp::Term("zerop".to_string()), SExp::Term("x".to_string())]),
+//!             SExp::Term("1".to_string()),
+//!             SExp::List(vec![
+//!                 SExp::Term("*".to_string()),
+//!                 SExp::Term("x".to_string()),
+//!                 SExp::List(vec![
+//!                     SExp::Term("fact".to_string()),
+//!                     SExp::List(vec![SExp::Term("-".to_string()), SExp::Term("x".to_string()), SExp::Term("1".to_string())]),
+//!                 ]),
+//!             ]),
+//!         ]),
+//!     ])),
+//! );
+//! ```
+//!
 //! Rust doesn't allow you to branch different functions, which prevents you from writing procedural parsers. This hampers the writing of procedural parsers, which can be replaced by a procedural chain for better visibility.
 //!
 //! For example, the JSON parser is procedural, but you can write it in procedural form:
@@ -127,13 +167,17 @@
 //!     json_parser.parse_ok("{\"key1\": \"value1\", \"key2\": [ true, \"value3\" ], \"key3\": { \"key4\": 15e1 }}".chars()),
 //!     Some(JSON::Object(vec![
 //!         ("key1".to_string(), JSON::String("value1".to_string())),
-//!         ("key2".to_string(), JSON::Array(vec![JSON::True, JSON::String("value3".to_string())])),
+//!         ("key2".to_string(), JSON::Array(vec![
+//!             JSON::True,
+//!             JSON::String("value3".to_string())
+//!         ])),
 //!         ("key3".to_string(), JSON::Object(vec![("key4".to_string(), JSON::Number(150.0))]))
 //!     ]))
 //! );
 //! ```
 
 pub mod traits;
+#[doc(inline)]
 pub use traits::*;
 pub mod char;
 pub use crate::char::{newline, no_break, no_break_ws, no_break_ws1, space, ws, ws1};
