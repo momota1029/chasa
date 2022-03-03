@@ -1,8 +1,9 @@
 use std::{fmt::Display, iter::once};
 
 use crate::{
-    combi,
+    before, combi,
     error::{Builder as Eb, CustomBuilder as Cb},
+    not_followed_by,
     prim::Error,
     util::run_drop,
     ICont, IOk, IReturn, Input, Parser, ParserOnce,
@@ -10,13 +11,17 @@ use crate::{
 
 impl<'a, I: Input, C, S, M: Cb> ICont<'a, I, C, S, M> {
     #[inline]
-    pub fn pure<O>(self, value: O) -> IReturn<'a, O, I, C, S, M> {
+    pub fn to<O>(self, value: O) -> IReturn<'a, O, I, C, S, M> {
         IReturn(Ok((value, self)))
     }
     #[inline]
-    pub fn pure_or<P: Parser<I, C, S, M>>(self, o: Option<P::Output>, p: P) -> IReturn<'a, P::Output, I, C, S, M> {
+    pub fn done(self) -> IReturn<'a, (), I, C, S, M> {
+        IReturn(Ok(((), self)))
+    }
+    #[inline]
+    pub fn to_or<P: Parser<I, C, S, M>>(self, o: Option<P::Output>, p: P) -> IReturn<'a, P::Output, I, C, S, M> {
         match o {
-            Some(o) => self.pure(o),
+            Some(o) => self.to(o),
             None => self.then(p),
         }
     }
@@ -37,7 +42,6 @@ impl<'a, I: Input, C, S, M: Cb> ICont<'a, I, C, S, M> {
     pub fn config<O, F: FnOnce(&C, Self) -> IReturn<'a, O, I, C, S, M>>(self, f: F) -> IReturn<'a, O, I, C, S, M> {
         f(self.config, self)
     }
-
     pub fn tail_rec<O1, O2>(
         self, o1: O1, f: impl Fn(O1, Self) -> IReturn<'a, Result<O2, O1>, I, C, S, M>,
     ) -> IReturn<'a, O2, I, C, S, M> {
@@ -49,6 +53,16 @@ impl<'a, I: Input, C, S, M: Cb> ICont<'a, I, C, S, M> {
     }
 }
 impl<'a, I: Input + Clone, C, S: Clone, M: Cb> ICont<'a, I, C, S, M> {
+    #[inline]
+    pub fn before<P: ParserOnce<I, C, S, M>>(self, p: P) -> IReturn<'a, P::Output, I, C, S, M> {
+        self.then(before(p))
+    }
+    #[inline]
+    pub fn not_followed_by(
+        self, p: impl ParserOnce<I, C, S, M>, label: impl Display + 'static,
+    ) -> IReturn<'a, (), I, C, S, M> {
+        self.then(not_followed_by(p, label))
+    }
     pub fn fold<O, P: Parser<I, C, S, M>>(
         self, o1: O, p: P, f: impl Fn(O, P::Output) -> O,
     ) -> IReturn<'a, O, I, C, S, M> {
@@ -116,8 +130,12 @@ impl<'a, O, I: Input, C, S, M: Cb> IReturn<'a, O, I, C, S, M> {
         IReturn(self.0.map(|(o, k)| (f(o), k)))
     }
     #[inline]
-    pub fn value<O2>(self, o: O2) -> IReturn<'a, O2, I, C, S, M> {
+    pub fn to<O2>(self, o: O2) -> IReturn<'a, O2, I, C, S, M> {
         IReturn(self.0.map(|(_, k)| (o, k)))
+    }
+    #[inline]
+    pub fn done(self) -> IReturn<'a, (), I, C, S, M> {
+        IReturn(self.0.map(|(_, k)| ((), k)))
     }
     #[inline]
     pub fn bind<P: ParserOnce<I, C, S, M>>(self, f: impl FnOnce(O) -> P) -> IReturn<'a, P::Output, I, C, S, M> {
@@ -129,7 +147,7 @@ impl<'a, O, I: Input, C, S, M: Cb> IReturn<'a, O, I, C, S, M> {
     }
     #[inline]
     pub fn left<P: ParserOnce<I, C, S, M>>(self, p: P) -> IReturn<'a, O, I, C, S, M> {
-        self.case(|o, k| k.then(p).value(o))
+        self.case(|o, k| k.then(p).to(o))
     }
     #[inline]
     pub fn right<P: ParserOnce<I, C, S, M>>(self, p: P) -> IReturn<'a, P::Output, I, C, S, M> {
@@ -170,7 +188,10 @@ impl<'a, O, I: Input + Clone + 'a, C, S: Clone + 'a, M: Cb> IReturn<'a, O, I, C,
     {
         self.case(|o, k| k.extend1(o, p))
     }
-
+    #[inline]
+    pub fn not_followed_by(self, p: impl ParserOnce<I, C, S, M>, label: impl Display + 'static) -> Self {
+        self.left(not_followed_by(p, label))
+    }
     #[inline]
     pub fn sep_fold<P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(
         self, p: P1, sep: P2, f: impl Fn(O, P1::Output) -> O,

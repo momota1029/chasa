@@ -17,7 +17,9 @@
 //! assert_eq!(sum.parse_ok("1+2*3+4".chars()), Some(11));
 //! ```
 //!
-//! To define and re-use the syntax recursively, use a function (which implements the `Parser` trait) that returns `impl ParserOnce`.
+//! Like the relationship between `Fn` and `FnOnce`, we have `Parser` and `ParserOnce` and write a parser to manipulate the iterator.
+//!
+//! To define and re-use the syntax recursively, use a function (which implements the [`Parser`] trait) that returns `impl `[`ParserOnce`].
 //!
 //! In the following example, `EasyParser` is a special case alias for `ParserOnce`.
 //! ```
@@ -90,9 +92,9 @@
 //!         '"' => k.then(string_char.many_with(|iter| iter.map_while(|x| x).collect())).map(JSON::String),
 //!         '-' => k.then(any).bind(num_parser).map(|n| JSON::Number(-n)),
 //!         c @ '0'..='9' => k.then(num_parser(c)).map(JSON::Number),
-//!         't' => k.then(string("rue".chars(), JSON::True)),
-//!         'f' => k.then(string("alse".chars(), JSON::False)),
-//!         'n' => k.then(string("ull".chars(), JSON::Null)),
+//!         't' => k.then(str("rue".chars(), JSON::True)),
+//!         'f' => k.then(str("alse".chars(), JSON::False)),
+//!         'n' => k.then(str("ull".chars(), JSON::Null)),
 //!         c => k.fail(prim::Error::Unexpect(c)),
 //!     })
 //!     .between(whitespace, whitespace)
@@ -107,14 +109,14 @@
 //!     any.case(move |c, k| match c {
 //!         '\\' => k.then(any.case(|c, k| {
 //!             match c {
-//!                 '"' => k.pure(Some('\"')),
-//!                 '\\' => k.pure(Some('\\')),
-//!                 '/' => k.pure(Some('/')),
-//!                 'b' => k.pure(Some('\x08')),
-//!                 'f' => k.pure(Some('\x0C')),
-//!                 'n' => k.pure(Some('\n')),
-//!                 'r' => k.pure(Some('\r')),
-//!                 't' => k.pure(Some('\t')),
+//!                 '"' => k.to(Some('\"')),
+//!                 '\\' => k.to(Some('\\')),
+//!                 '/' => k.to(Some('/')),
+//!                 'b' => k.to(Some('\x08')),
+//!                 'f' => k.to(Some('\x0C')),
+//!                 'n' => k.to(Some('\n')),
+//!                 'r' => k.to(Some('\r')),
+//!                 't' => k.to(Some('\t')),
 //!                 'u' => k
 //!                     .then(
 //!                         hex.many_with(|iter| iter.take(4).collect::<String>())
@@ -126,8 +128,8 @@
 //!                 c => k.fail(prim::Error::Unexpect(c)),
 //!             }
 //!         })),
-//!         '"' => k.pure(None),
-//!         c => k.pure(Some(c)),
+//!         '"' => k.to(None),
+//!         c => k.to(Some(c)),
 //!     })
 //! }
 //!
@@ -137,7 +139,7 @@
 //!         '0' => k.then(char('.').or_not().case(|c,k| if c.is_some() {
 //!             k.then(digit.extend("0.".to_string()))
 //!         } else {
-//!             k.pure("0".to_string())
+//!             k.to("0".to_string())
 //!         })),
 //!         c @ '1'..='9' => k.then(digit.extend(c.to_string())).bind(|mut str| char('.').or_not().case_once(move |c,k|
 //!             if c.is_some() {
@@ -145,7 +147,7 @@
 //!                 k.then(digit.extend(str))
 //!             }
 //!             else {
-//!                 k.pure(str)
+//!                 k.to(str)
 //!             }
 //!         )),
 //!         c => k.fail(prim::Error::Unexpect(c)),
@@ -157,7 +159,7 @@
 //!                 str.extend(pm);
 //!                 digit.extend(str)
 //!             }),
-//!             None => k.pure(str)
+//!             None => k.to(str)
 //!         })
 //!     })
 //!     .and_then_once(|str| str.parse::<f64>().map_err(prim::Error::Message))
@@ -191,6 +193,6 @@ pub use input::Input;
 pub mod prim;
 pub use prim::{
     any, char, config, eoi, fail, fail_with, get_state, local_state, no_state, none_of, one_of, parser, parser_once,
-    pos, pure, satisfy, satisfy_map, set_config, set_state, state, string,
+    pos, pure, satisfy, satisfy_map, set_config, set_state, state, str,
 };
 mod util;

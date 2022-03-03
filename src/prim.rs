@@ -469,10 +469,10 @@ impl<
 /// A parser that compares character iterators and input as they are consumed together, and accepts them if they all match.
 /// ```
 /// use chasa::*;
-/// assert_eq!(string("a".chars(), 1).parse_ok("a2".chars()), Some(1));
-/// assert_eq!(string("a2".chars(), 1).parse_ok("a2".chars()), Some(1));
-/// assert_eq!(string("a23".chars(), 1).parse_ok("a2".chars()), None);
-/// assert_eq!(string("a3".chars(), 1).or(string("a".chars(), 2)).parse_ok("a2".chars()), Some(2));
+/// assert_eq!(str("a".chars(), 1).parse_ok("a2".chars()), Some(1));
+/// assert_eq!(str("a2".chars(), 1).parse_ok("a2".chars()), Some(1));
+/// assert_eq!(str("a23".chars(), 1).parse_ok("a2".chars()), None);
+/// assert_eq!(str("a3".chars(), 1).or(str("a".chars(), 2)).parse_ok("a2".chars()), Some(2));
 /// ```
 pub struct String<Iter, O, I, C, S, M>(Iter, O, PhantomData<fn() -> (I, C, S, M)>);
 impl<Iter: Clone, O: Clone, I, C, S, M> Clone for String<Iter, O, I, C, S, M> {
@@ -482,7 +482,7 @@ impl<Iter: Clone, O: Clone, I, C, S, M> Clone for String<Iter, O, I, C, S, M> {
     }
 }
 impl<Iter: Copy, O: Copy, I, C, S, M> Copy for String<Iter, O, I, C, S, M> {}
-pub fn string<Iter: IntoIterator<Item = I::Item>, O, I: Input, C, S, M: Cb>(
+pub fn str<Iter: IntoIterator<Item = I::Item>, O, I: Input, C, S, M: Cb>(
     iter: Iter, value: O,
 ) -> String<Iter, O, I, C, S, M> {
     String(iter, value, PhantomData)

@@ -141,8 +141,8 @@ pub fn is_space(c: &char) -> bool {
 #[inline(always)]
 pub fn newline<I: Input<Item = char> + Clone, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
     no_state(satisfy_map(get_nl_kind).case(|kind, k| match kind {
-        NLKind::LineFeed | NLKind::Other => k.pure(()),
-        NLKind::CarriageReturn => k.then(char('\n').or_not().value(())),
+        NLKind::LineFeed | NLKind::Other => k.to(()),
+        NLKind::CarriageReturn => k.then(char('\n').or_not().to(())),
     }))
     .label_with(|| "newline")
 }
@@ -165,7 +165,7 @@ pub fn no_ws<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M
 /// Accept any single space character.
 #[inline]
 pub fn space<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
-    satisfy_map(get_sp_kind).value(())
+    satisfy_map(get_sp_kind).to(())
 }
 
 /// Greedily accepts a sequence of whitespace characters that do not contain a newline character.

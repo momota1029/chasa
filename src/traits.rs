@@ -1,8 +1,8 @@
 use crate::{
     combi::{
         many, many1, And, AndThen, AndThenWith, Between, Bind, Case, Cut, Extend1Parser, ExtendParser, Fold, Fold1,
-        Label, LabelWith, Left, Many, Many1, ManyWith, Map, Or, OrNot, ParserIterator, ParserSepIterator, Ranged,
-        Right, Sep, Sep1, SepExtend, SepExtend1, SepFold, SepFold1, SepWith, Value,
+        GetString, Label, LabelWith, Left, Many, Many1, ManyWith, Map, Or, OrNot, ParserIterator, ParserSepIterator,
+        Ranged, Right, Sep, Sep1, SepExtend, SepExtend1, SepFold, SepFold1, SepWith, Value,
     },
     error::{CustomBuilder, LazyError, Nil},
     fold, fold1,
@@ -65,11 +65,17 @@ pub trait ParserOnce<I: Input, C, S, M: CustomBuilder> {
     {
         Map(self, f)
     }
-    fn value<O>(self, value: O) -> Value<Self, O>
+    fn to<O>(self, value: O) -> Value<Self, O>
     where
         Self: Sized,
     {
         Value(self, value)
+    }
+    fn skip(self) -> Value<Self, ()>
+    where
+        Self: Sized,
+    {
+        Value(self, ())
     }
     fn label<L: Display + 'static>(self, label: L) -> Label<Self, L>
     where
@@ -188,6 +194,13 @@ pub trait ParserOnce<I: Input, C, S, M: CustomBuilder> {
     {
         Ranged(self)
     }
+    #[inline]
+    fn get_str<O: FromIterator<I::Item>>(self) -> GetString<Self, O>
+    where
+        Self: Sized,
+    {
+        GetString(self, PhantomData)
+    }
 }
 
 /// A parser that can be used again and again.
@@ -292,13 +305,13 @@ pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
     where
         Self: Sized,
     {
-        self.value(()).extend(())
+        self.to(()).extend(())
     }
     fn skip_many1(self) -> Extend1Parser<(), Value<Self, ()>>
     where
         Self: Sized,
     {
-        self.value(()).extend1(())
+        self.to(()).extend1(())
     }
     fn many<B: FromIterator<Self::Output>>(self) -> Many<Self, B>
     where

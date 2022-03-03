@@ -58,7 +58,10 @@ impl<I: Iterator, C: Counter<I::Item>> Input for FromIterator<I, C> {
     #[inline]
     fn next(&mut self) -> Option<Result<I::Item, C::Error>> {
         let item = self.0.next()?;
-        Some(self.1.next(&item).map(move |_| item))
+        Some(self.1.next(&item).map(move |_| {
+            self.2 += 1;
+            item
+        }))
     }
 }
 

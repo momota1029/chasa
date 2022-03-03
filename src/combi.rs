@@ -13,8 +13,8 @@ use crate::{
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(pure_or(Some("first"), string("second".chars(), "second")).parse_ok("second".chars()), Some("first"));
-/// assert_eq!(pure_or(None, string("second".chars(), "second")).parse_ok("second".chars()), Some("second"))
+/// assert_eq!(pure_or(Some("first"), str("second".chars(), "second")).parse_ok("second".chars()), Some("first"));
+/// assert_eq!(pure_or(None, str("second".chars(), "second")).parse_ok("second".chars()), Some("second"))
 /// ```
 pub fn pure_or<O, I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>>(o: Option<O>, p: P) -> Either<Pure<O>, P> {
     match o {
@@ -179,7 +179,7 @@ impl<I: Input, C, S, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>> Pars
 /// use chasa::*;
 /// assert_eq!(any.left(any).parse_ok("ab".chars()), Some('a'));
 /// assert_eq!(any.left(char('a')).parse_ok("ab".chars()), None);
-/// assert_eq!(string("chasa".chars(), ()).left(char(':')).parse_ok("chasa: parser combinator".chars()), Some(()));
+/// assert_eq!(str("chasa".chars(), ()).left(char(':')).parse_ok("chasa: parser combinator".chars()), Some(()));
 /// ```
 #[derive(Clone, Copy)]
 pub struct Left<P1, P2>(pub(crate) P1, pub(crate) P2);
@@ -211,7 +211,7 @@ impl<I: Input, C, S, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>> Pars
 /// use chasa::*;
 /// assert_eq!(any.right(any).parse_ok("ab".chars()), Some('b'));
 /// assert_eq!(char('b').right(any).parse_ok("ab".chars()), None);
-/// assert_eq!(ws.right(string("chasa".chars(), ())).parse_ok("   chasa".chars()), Some(()));
+/// assert_eq!(ws.right(str("chasa".chars(), ())).parse_ok("   chasa".chars()), Some(()));
 /// ```
 #[derive(Clone, Copy)]
 pub struct Right<P1, P2>(pub(crate) P1, pub(crate) P2);
@@ -276,7 +276,7 @@ impl<I: Input, C, S, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, P3: 
 /// use chasa::*;
 /// fn parser<I:Input<Item=char>>() -> impl ParserOnce<I,(),(),Nil,Output=usize> {
 ///     one_of("abc".chars()).case(|char, k| match char {
-///         'a' => k.pure(10),
+///         'a' => k.to(10),
 ///         'b' => k.then(parser).and(parser).map(|(a,b)| a + b),
 ///         'c' => k.then(parser),
 ///         _ => unreachable!()
@@ -624,8 +624,8 @@ impl<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M> for Cut<P>
 /// ```
 /// use chasa::*;
 /// assert_eq!(char('a').ranged().parse_ok("a".chars()), Some(('a',0,1)));
-/// assert_eq!(string("abcd".chars(),()).ranged().parse_ok("abcd".chars()), Some(((),0,4)));
-/// assert_eq!(ws.right(string("abcd".chars(),()).ranged()).parse_ok("    abcd".chars()), Some(((),4,8)))
+/// assert_eq!(str("abcd".chars(),()).ranged().parse_ok("abcd".chars()), Some(((),0,4)));
+/// assert_eq!(ws.right(str("abcd".chars(),()).ranged()).parse_ok("    abcd".chars()), Some(((),4,8)))
 /// ```
 #[derive(Clone, Copy)]
 pub struct Ranged<P>(pub(crate) P);
@@ -644,6 +644,58 @@ impl<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M> for Ranged
         self.0.run(cont).map(|(o, ok)| ((o, pos, ok.input.pos()), ok))
     }
 }
+
+/// Returns together with the string accepted by the parser.
+pub struct GetString<P, O>(pub(crate) P, pub(crate) PhantomData<fn() -> O>);
+impl<O: FromIterator<I::Item>, I: Input + Clone, C, S, M: Cb, P: ParserOnce<I, C, S, M>> ParserOnce<I, C, S, M>
+    for GetString<P, O>
+{
+    type Output = (P::Output, O);
+    #[inline]
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<(P::Output, O), I, S, M> {
+        let (mut input, begin) = (cont.ok.input.clone(), cont.ok.input.index());
+        self.0.run_once(cont).map(|(o, ok)| {
+            let end = ok.input.index();
+            let str = InputIter { input: &mut input, begin, end }.collect();
+            ((o, str), ok)
+        })
+    }
+}
+impl<O: FromIterator<I::Item>, I: Input + Clone, C, S, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M>
+    for GetString<P, O>
+{
+    #[inline]
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<(P::Output, O), I, S, M> {
+        let (mut input, begin) = (cont.ok.input.clone(), cont.ok.input.index());
+        self.0.run(cont).map(|(o, ok)| {
+            let end = ok.input.index();
+            let str = InputIter { input: &mut input, begin, end }.collect();
+            ((o, str), ok)
+        })
+    }
+}
+struct InputIter<'a, I: Input> {
+    input: &'a mut I,
+    begin: usize,
+    end: usize,
+}
+impl<'a, I: Input> Iterator for InputIter<'a, I> {
+    type Item = I::Item;
+    #[inline]
+    fn next(&mut self) -> Option<I::Item> {
+        if self.input.index() < self.end {
+            self.input.next()?.ok()
+        } else {
+            None
+        }
+    }
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.end - self.begin;
+        (len, Some(len))
+    }
+}
+impl<'a, I: Input> ExactSizeIterator for InputIter<'a, I> {}
 
 /// If successful, it does not consume input. The subsequent parser will read the same part again.
 /// # Example
@@ -972,7 +1024,7 @@ fn run_left_sep1<
 /// assert_eq!(d.sep_fold1(char(','),|a,_,b| a+b).and(char(',').right(d)).parse_ok("1,2,3,4,5,6".chars()), None);
 /// assert_eq!(d.sep_fold1(char(','),|a,_,b| a+b).and(char(',')).parse_ok("1,2,3,4,".chars()), Some((10, ',')));
 ///
-/// let op = char('+').value(1).or(char('-').value(-1));
+/// let op = char('+').to(1).or(char('-').to(-1));
 /// let p = d.sep_fold1(op, |a,sign,b| a + sign*b);
 /// assert_eq!(p.parse_ok("1+2+3-4+5".chars()), Some(7));
 /// ```
@@ -1234,7 +1286,7 @@ impl<
 /// use chasa::*;
 /// let d = one_of("0123456789".chars()).and_then(|c: char| c.to_string().parse::<usize>().map_err(prim::Error::Message));
 /// let d = d.to_ref();
-/// let p = char('(').right(tail_rec(0, move |n| d.map(move |m| Err(m+n)).or(char(')').value(Ok(n)))));
+/// let p = char('(').right(tail_rec(0, move |n| d.map(move |m| Err(m+n)).or(char(')').to(Ok(n)))));
 /// assert_eq!(p.to_ref().parse_ok("(12345)".chars()), Some(15));
 /// assert_eq!(p.to_ref().parse_ok("(12)345)".chars()), Some(3));
 /// assert_eq!(p.to_ref().parse_ok("()".chars()), Some(0));
@@ -1606,7 +1658,7 @@ impl<
 /// let d = d.to_ref();
 /// assert_eq!(
 ///     d.sep_with(char(','), |iter| iter.take(2).collect())
-///         .and(string(",3,4,5".chars(), true))
+///         .and(str(",3,4,5".chars(), true))
 ///         .parse_ok("1,2,3,4,5".chars()),
 ///     Some((vec![1,2], true))
 /// );
