@@ -4,7 +4,7 @@ use either::Either;
 
 use crate::{
     error::{Builder as Eb, CustomBuilder as Cb},
-    prim::{self, pure, Pure, RefParser},
+    prim::{pure, Pure},
     util::run_drop,
     ICont, IOk, IResult, IReturn, Input, LazyError, Parser, ParserOnce,
 };
@@ -13,8 +13,8 @@ use crate::{
 /// # Example
 /// ```
 /// use chasa::*;
-/// assert_eq!(pure_or(Some("first"), str("second", "second")).parse_ok("second"), Some("first"));
-/// assert_eq!(pure_or(None, str("second", "second")).parse_ok("second"), Some("second"))
+/// assert_eq!(pure_or(Some("first"), str("second").to("second")).parse_ok("second"), Some("first"));
+/// assert_eq!(pure_or(None, str("second").to("second")).parse_ok("second"), Some("second"))
 /// ```
 pub fn pure_or<O, I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>>(o: Option<O>, p: P) -> Either<Pure<O>, P> {
     match o {
@@ -179,7 +179,7 @@ impl<I: Input, C, S, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>> Pars
 /// use chasa::*;
 /// assert_eq!(any.left(any).parse_ok("ab"), Some('a'));
 /// assert_eq!(any.left(char('a')).parse_ok("ab"), None);
-/// assert_eq!(str("chasa", ()).left(char(':')).parse_ok("chasa: parser combinator"), Some(()));
+/// assert_eq!(str("chasa").to( ()).left(char(':')).parse_ok("chasa: parser combinator"), Some(()));
 /// ```
 #[derive(Clone, Copy)]
 pub struct Left<P1, P2>(pub(crate) P1, pub(crate) P2);
@@ -211,7 +211,7 @@ impl<I: Input, C, S, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>> Pars
 /// use chasa::*;
 /// assert_eq!(any.right(any).parse_ok("ab"), Some('b'));
 /// assert_eq!(char('b').right(any).parse_ok("ab"), None);
-/// assert_eq!(ws.right(str("chasa", ())).parse_ok("   chasa"), Some(()));
+/// assert_eq!(ws.right(str("chasa").to( ())).parse_ok("   chasa"), Some(()));
 /// ```
 #[derive(Clone, Copy)]
 pub struct Right<P1, P2>(pub(crate) P1, pub(crate) P2);
@@ -333,23 +333,15 @@ impl<
 /// use chasa::*;
 /// let p = any.and_then(|c| match c {
 ///     'a' => Ok(true),
-///     _ => Err(prim::Error::Message("hello"))
+///     _ => Err(message("hello"))
 /// });
 /// assert_eq!(p.to_ref().parse_ok("abc"), Some(true));
 /// assert_eq!(p.to_ref().parse_ok("cba"), None);
 /// ```
 #[derive(Clone, Copy)]
 pub struct AndThen<P, F>(pub(crate) P, pub(crate) F);
-impl<
-        I: Input,
-        C,
-        S,
-        M: Cb,
-        P: ParserOnce<I, C, S, M>,
-        O,
-        E: Display + 'static,
-        F: FnOnce(P::Output) -> Result<O, prim::Error<E>>,
-    > ParserOnce<I, C, S, M> for AndThen<P, F>
+impl<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, O, F: FnOnce(P::Output) -> Result<O, Eb<M>>>
+    ParserOnce<I, C, S, M> for AndThen<P, F>
 {
     type Output = O;
     #[inline]
@@ -358,25 +350,12 @@ impl<
         let pos = ok.input.pos();
         self.0.run_once(ICont { ok, config, drop }).and_then(|(o, ok)| match self.1(o) {
             Ok(o) => Ok((o, ok)),
-            Err(prim::Error::Message(msg)) => {
-                Err(Eb::message(msg).at::<I>(ok.input.index(), pos, Some(ok.input.pos())))
-            },
-            Err(prim::Error::Unexpect(label)) => {
-                Err(Eb::unexpected(label).at::<I>(ok.input.index(), pos, Some(ok.input.pos())))
-            },
+            Err(err) => Err(err.at::<I>(ok.input.index(), pos, Some(ok.input.pos())).or_merge(ok.err)),
         })
     }
 }
-impl<
-        I: Input,
-        C,
-        S,
-        M: Cb,
-        P: Parser<I, C, S, M>,
-        O,
-        E: Display + 'static,
-        F: Fn(P::Output) -> Result<O, prim::Error<E>>,
-    > Parser<I, C, S, M> for AndThen<P, F>
+impl<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>, O, F: Fn(P::Output) -> Result<O, Eb<M>>> Parser<I, C, S, M>
+    for AndThen<P, F>
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
@@ -384,88 +363,7 @@ impl<
         let pos = ok.input.pos();
         self.0.run(ICont { ok, config, drop }).and_then(|(o, ok)| match self.1(o) {
             Ok(o) => Ok((o, ok)),
-            Err(prim::Error::Message(msg)) => {
-                Err(Eb::message(msg).at::<I>(ok.input.index(), pos, Some(ok.input.pos())))
-            },
-            Err(prim::Error::Unexpect(label)) => {
-                Err(Eb::unexpected(label).at::<I>(ok.input.index(), pos, Some(ok.input.pos())))
-            },
-        })
-    }
-}
-
-/// Sift through the parser results. If a token is sifted out, it does not consume input. Errors are delayed.
-/// # Example
-/// ```
-/// use chasa::*;
-/// use chasa::*;
-/// let p = any.and_then_with(|c| match c {
-///     'a' => Ok(true),
-///     _ => Err(prim::Error::Message(|| "hello"))
-/// });
-/// assert_eq!(p.to_ref().parse_ok("abc"), Some(true));
-/// assert_eq!(p.to_ref().parse_ok("cba"), None);
-/// ```
-pub struct AndThenWith<P, F1, F2>(pub(crate) P, pub(crate) F1, pub(crate) PhantomData<fn() -> F2>);
-impl<P: Clone, F1: Clone, F2> Clone for AndThenWith<P, F1, F2> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1.clone(), PhantomData)
-    }
-}
-impl<P: Copy, F1: Copy, F2> Copy for AndThenWith<P, F1, F2> {}
-impl<
-        I: Input,
-        C,
-        S,
-        M: Cb,
-        P: ParserOnce<I, C, S, M>,
-        O,
-        E: Display,
-        F2: Fn() -> E + 'static,
-        F1: FnOnce(P::Output) -> Result<O, prim::Error<F2>>,
-    > ParserOnce<I, C, S, M> for AndThenWith<P, F1, F2>
-{
-    type Output = O;
-    #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        let pos = ok.input.pos();
-        self.0.run_once(ICont { ok, config, drop }).and_then(|(o, ok)| match self.1(o) {
-            Ok(o) => Ok((o, ok)),
-            Err(prim::Error::Message(msg)) => {
-                Err(Eb::message_with(msg).at::<I>(ok.input.index(), pos, Some(ok.input.pos())))
-            },
-            Err(prim::Error::Unexpect(label)) => {
-                Err(Eb::unexpected_with(label).at::<I>(ok.input.index(), pos, Some(ok.input.pos())))
-            },
-        })
-    }
-}
-impl<
-        I: Input,
-        C,
-        S,
-        M: Cb,
-        P: Parser<I, C, S, M>,
-        O,
-        E: Display,
-        F2: Fn() -> E + 'static,
-        F1: Fn(P::Output) -> Result<O, prim::Error<F2>>,
-    > Parser<I, C, S, M> for AndThenWith<P, F1, F2>
-{
-    #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        let pos = ok.input.pos();
-        self.0.run(ICont { ok, config, drop }).and_then(|(o, ok)| match self.1(o) {
-            Ok(o) => Ok((o, ok)),
-            Err(prim::Error::Message(msg)) => {
-                Err(Eb::message_with(msg).at::<I>(ok.input.index(), pos, Some(ok.input.pos())))
-            },
-            Err(prim::Error::Unexpect(label)) => {
-                Err(Eb::unexpected_with(label).at::<I>(ok.input.index(), pos, Some(ok.input.pos())))
-            },
+            Err(err) => Err(err.at::<I>(ok.input.index(), pos, Some(ok.input.pos())).or_merge(ok.err)),
         })
     }
 }
@@ -483,14 +381,8 @@ impl<
 /// ```
 #[derive(Clone, Copy)]
 pub struct Or<P1, P2>(pub(crate) P1, pub(crate) P2);
-impl<
-        I: Input,
-        C,
-        S: Clone,
-        M: Cb,
-        P1: ParserOnce<I, C, S, M>,
-        P2: ParserOnce<I, C, S, M, Output = P1::Output>,
-    > ParserOnce<I, C, S, M> for Or<P1, P2>
+impl<I: Input, C, S: Clone, M: Cb, P1: ParserOnce<I, C, S, M>, P2: ParserOnce<I, C, S, M, Output = P1::Output>>
+    ParserOnce<I, C, S, M> for Or<P1, P2>
 {
     type Output = P1::Output;
     #[inline]
@@ -624,8 +516,8 @@ impl<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M> for Cut<P>
 /// ```
 /// use chasa::*;
 /// assert_eq!(char('a').ranged().parse_ok("a"), Some(('a',0,1)));
-/// assert_eq!(str("abcd",()).ranged().parse_ok("abcd"), Some(((),0,4)));
-/// assert_eq!(ws.right(str("abcd",()).ranged()).parse_ok("    abcd"), Some(((),4,8)))
+/// assert_eq!(str("abcd").to(()).ranged().parse_ok("abcd"), Some(((),0,4)));
+/// assert_eq!(ws.right(str("abcd").to(()).ranged()).parse_ok("    abcd"), Some(((),4,8)))
 /// ```
 #[derive(Clone, Copy)]
 pub struct Ranged<P>(pub(crate) P);
@@ -661,9 +553,7 @@ impl<O: FromIterator<I::Item>, I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>>
         })
     }
 }
-impl<O: FromIterator<I::Item>, I: Input, C, S, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M>
-    for GetString<P, O>
-{
+impl<O: FromIterator<I::Item>, I: Input, C, S, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M> for GetString<P, O> {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<(P::Output, O), I, S, M> {
         let (mut input, begin) = (cont.ok.input.clone(), cont.ok.input.index());
@@ -697,6 +587,40 @@ impl<'a, I: Input> Iterator for InputIter<'a, I> {
 }
 impl<'a, I: Input> ExactSizeIterator for InputIter<'a, I> {}
 
+pub struct GetStringExtend<P, O>(pub(crate) P, pub(crate) O);
+#[inline]
+pub fn extend_with_str<O, P>(str: O, parser: P) -> GetStringExtend<P, O> {
+    GetStringExtend(parser, str)
+}
+impl<O: Extend<I::Item>, I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>> ParserOnce<I, C, S, M>
+    for GetStringExtend<P, O>
+{
+    type Output = (P::Output, O);
+    #[inline]
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<(P::Output, O), I, S, M> {
+        let (mut input, begin) = (cont.ok.input.clone(), cont.ok.input.index());
+        self.0.run_once(cont).map(|(o, ok)| {
+            let end = ok.input.index();
+            let mut str = self.1;
+            str.extend(InputIter { input: &mut input, begin, end });
+            ((o, str), ok)
+        })
+    }
+}
+impl<O: Extend<I::Item> + Clone, I: Input, C, S, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M>
+    for GetStringExtend<P, O>
+{
+    #[inline]
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<(P::Output, O), I, S, M> {
+        let (mut input, begin) = (cont.ok.input.clone(), cont.ok.input.index());
+        self.0.run(cont).map(|(o, ok)| {
+            let end = ok.input.index();
+            let mut str = self.1.clone();
+            str.extend(InputIter { input: &mut input, begin, end });
+            ((o, str), ok)
+        })
+    }
+}
 /// If successful, it does not consume input. The subsequent parser will read the same part again.
 /// # Example
 /// ```
@@ -802,7 +726,7 @@ fn run_fold<O, I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>>(
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(prim::Error::Message));
+/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(message));
 /// let d = d.to_ref();
 /// assert_eq!(d.fold(0,|a,b| a+b).parse_ok("12345"), Some(15));
 /// assert_eq!(d.fold(0,|a,b| a+b).parse_ok(""), Some(0));
@@ -836,7 +760,7 @@ impl<I: Input, C, S: Clone, M: Cb, T: Clone, P: Parser<I, C, S, M>, F: Fn(T, P::
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(prim::Error::Message));
+/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(message));
 /// let d = d.to_ref();
 /// assert_eq!(d.fold1(0,|a,b| a+b).parse_ok("12345"), Some(15));
 /// assert_eq!(d.fold1(0,|a,b| a+b).parse_ok(""), None);
@@ -910,7 +834,7 @@ fn run_left_sep<
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(prim::Error::Message));
+/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(message));
 /// let d = d.to_ref();
 /// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).parse_ok("1,2,3,4,5"), Some(15));
 /// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).parse_ok(""), Some(0));
@@ -925,16 +849,8 @@ pub struct SepFold<T, P1, P2, F> {
     pub(crate) succ: F,
 }
 
-impl<
-        I: Input,
-        C,
-        S: Clone,
-        M: Cb,
-        T,
-        P1: Parser<I, C, S, M>,
-        P2: Parser<I, C, S, M>,
-        F: Fn(T, P1::Output) -> T,
-    > ParserOnce<I, C, S, M> for SepFold<T, P1, P2, F>
+impl<I: Input, C, S: Clone, M: Cb, T, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, F: Fn(T, P1::Output) -> T>
+    ParserOnce<I, C, S, M> for SepFold<T, P1, P2, F>
 {
     type Output = T;
     #[inline]
@@ -1017,12 +933,12 @@ fn run_left_sep1<
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<isize>().map_err(prim::Error::Message));
-/// let d = d.to_ref();
-/// assert_eq!(d.sep_fold1(char(','),|a,_,b| a+b).parse_ok("1,2,3,4,5"), Some(15));
-/// assert_eq!(d.sep_fold1(char(','),|a,_,b| a+b).parse_ok(""), None);
-/// assert_eq!(d.sep_fold1(char(','),|a,_,b| a+b).and(char(',').right(d)).parse_ok("1,2,3,4,5,6"), None);
-/// assert_eq!(d.sep_fold1(char(','),|a,_,b| a+b).and(char(',')).parse_ok("1,2,3,4,"), Some((10, ',')));
+/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<isize>().map_err(message));
+/// let p = d.sep_fold1(char(','),|a,_,b| a+b);
+/// assert_eq!(p.parse_ok("1,2,3,4,5"), Some(15));
+/// assert_eq!(p.parse_ok(""), None);
+/// assert_eq!(p.and(char(',').right(d)).parse_ok("1,2,3,4,5,6"), None);
+/// assert_eq!(p.and(char(',')).parse_ok("1,2,3,4,"), Some((10, ',')));
 ///
 /// let op = char('+').to(1).or(char('-').to(-1));
 /// let p = d.sep_fold1(op, |a,sign,b| a + sign*b);
@@ -1213,15 +1129,8 @@ impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M
         }
     }
 }
-impl<
-        I: Input,
-        C,
-        S: Clone,
-        M: Cb,
-        P1: Parser<I, C, S, M>,
-        P2: Parser<I, C, S, M>,
-        O: Extend<P1::Output> + Clone,
-    > Parser<I, C, S, M> for SepExtend<O, P1, P2>
+impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, O: Extend<P1::Output> + Clone>
+    Parser<I, C, S, M> for SepExtend<O, P1, P2>
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
@@ -1259,15 +1168,8 @@ impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M
         })
     }
 }
-impl<
-        I: Input,
-        C,
-        S: Clone,
-        M: Cb,
-        P1: Parser<I, C, S, M>,
-        P2: Parser<I, C, S, M>,
-        O: Extend<P1::Output> + Clone,
-    > Parser<I, C, S, M> for SepExtend1<O, P1, P2>
+impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, O: Extend<P1::Output> + Clone>
+    Parser<I, C, S, M> for SepExtend1<O, P1, P2>
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
@@ -1284,7 +1186,7 @@ impl<
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(prim::Error::Message));
+/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(message));
 /// let d = d.to_ref();
 /// let p = char('(').right(tail_rec(0, move |n| d.map(move |m| Err(m+n)).or(char(')').to(Ok(n)))));
 /// assert_eq!(p.to_ref().parse_ok("(12345)"), Some(15));
@@ -1363,7 +1265,7 @@ impl<I: Input, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser<I, C, S
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         let mut ret = Some(Ok(cont));
-        let iter = ParserIterator { parser: self.0.to_ref(), ret: &mut ret };
+        let iter = ParserIterator { parser: &self.0, ret: &mut ret };
         let o = iter.collect::<O>();
         match ret.unwrap() {
             Ok(cont) => Ok((o, cont.ok)),
@@ -1409,7 +1311,7 @@ impl<I: Input, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser<I, C, S
         let ICont { ok, config, drop } = cont;
         self.0.run(ICont { ok, config, drop }).and_then(|(o, ok)| {
             let mut ret = Some(Ok(ICont { ok, config, drop }));
-            let iter = ParserIterator { parser: self.0.to_ref(), ret: &mut ret };
+            let iter = ParserIterator { parser: &self.0, ret: &mut ret };
             let o = once(o).chain(iter).collect::<O>();
             match ret.unwrap() {
                 Ok(cont) => Ok((o, cont.ok)),
@@ -1420,8 +1322,8 @@ impl<I: Input, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser<I, C, S
 }
 
 /// It iterates through a sequence of parses, or does not parse if dropped.
-/// A failure that does not consume input will cause the iterator to terminate, a failure that consumes it will cause the whole iterator to fail.
-/// The required [`ParserIterator<prim::RefParser<P>>`] argument to `F` is simply an iterator that returns `P::Output`.
+/// A failure that does not consume input will cause the iterator to terminate, a failure that consumes it will cause the whole parser to fail.
+/// The required [`ParserIterator<P>`] argument to `F` is simply an iterator that returns `P::Output`.
 /// # Example
 /// ```
 /// use chasa::*;
@@ -1445,21 +1347,14 @@ impl<I: Input, C, S: Clone, M: Cb, O: FromIterator<P::Output>, P: Parser<I, C, S
 /// ```
 #[derive(Clone, Copy)]
 pub struct ManyWith<P, F>(pub(crate) P, pub(crate) F);
-impl<
-        I: Input,
-        C,
-        S: Clone,
-        M: Cb,
-        P: Parser<I, C, S, M>,
-        F: FnOnce(ParserIterator<RefParser<P>, I, C, S, M>) -> O,
-        O,
-    > ParserOnce<I, C, S, M> for ManyWith<P, F>
+impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, F: FnOnce(ParserIterator<P, I, C, S, M>) -> O, O>
+    ParserOnce<I, C, S, M> for ManyWith<P, F>
 {
     type Output = O;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         let mut ret = Some(Ok(cont));
-        let iter = ParserIterator { parser: self.0.to_ref(), ret: &mut ret };
+        let iter = ParserIterator { parser: &self.0, ret: &mut ret };
         let o = self.1(iter);
         match ret.unwrap() {
             Ok(cont) => Ok((o, cont.ok)),
@@ -1467,20 +1362,13 @@ impl<
         }
     }
 }
-impl<
-        I: Input,
-        C,
-        S: Clone,
-        M: Cb,
-        P: Parser<I, C, S, M>,
-        F: Fn(ParserIterator<RefParser<P>, I, C, S, M>) -> O,
-        O,
-    > Parser<I, C, S, M> for ManyWith<P, F>
+impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, F: Fn(ParserIterator<P, I, C, S, M>) -> O, O>
+    Parser<I, C, S, M> for ManyWith<P, F>
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         let mut ret = Some(Ok(cont));
-        let iter = ParserIterator { parser: self.0.to_ref(), ret: &mut ret };
+        let iter = ParserIterator { parser: &self.0, ret: &mut ret };
         let o = self.1(iter);
         match ret.unwrap() {
             Ok(cont) => Ok((o, cont.ok)),
@@ -1489,14 +1377,69 @@ impl<
     }
 }
 
+/// Repeat a series of parses and do not parse if dropped.
+/// Failures that do not consume input terminate the iterator, while failures that consume input cause the entire parser to fail.
+/// A function can return an error::Builder<M> as its return value, which also causes the entire parser to fail.
+/// The mandatory [`ParserIterator<P>`] argument to `F` is simply an iterator returning `P::Output`.
+pub struct ManyThen<P, F>(pub(crate) P, pub(crate) F);
+impl<
+        I: Input,
+        C,
+        S: Clone,
+        M: Cb,
+        P: Parser<I, C, S, M>,
+        F: FnOnce(ParserIterator<P, I, C, S, M>) -> Result<O, Eb<M>>,
+        O,
+    > ParserOnce<I, C, S, M> for ManyThen<P, F>
+{
+    type Output = O;
+    #[inline]
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+        let pos = cont.ok.input.pos();
+        let mut ret = Some(Ok(cont));
+        let iter = ParserIterator { parser: &self.0, ret: &mut ret };
+        let o = self.1(iter);
+        match ret.unwrap() {
+            Ok(cont) => match o {
+                Ok(o) => Ok((o, cont.ok)),
+                Err(e) => Err(e.at::<I>(cont.ok.input.index(), pos, Some(cont.ok.input.pos())).or_merge(cont.ok.err)),
+            },
+            Err(e) => Err(e),
+        }
+    }
+}
+impl<
+        I: Input,
+        C,
+        S: Clone,
+        M: Cb,
+        P: Parser<I, C, S, M>,
+        F: Fn(ParserIterator<P, I, C, S, M>) -> Result<O, Eb<M>>,
+        O,
+    > Parser<I, C, S, M> for ManyThen<P, F>
+{
+    #[inline]
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+        let pos = cont.ok.input.pos();
+        let mut ret = Some(Ok(cont));
+        let iter = ParserIterator { parser: &self.0, ret: &mut ret };
+        let o = self.1(iter);
+        match ret.unwrap() {
+            Ok(cont) => match o {
+                Ok(o) => Ok((o, cont.ok)),
+                Err(e) => Err(e.at::<I>(cont.ok.input.index(), pos, Some(cont.ok.input.pos())).or_merge(cont.ok.err)),
+            },
+            Err(e) => Err(e),
+        }
+    }
+}
+
 /// an iterator that returns `P::Output`. It can only be used locally within [`ManyWith`].
 pub struct ParserIterator<'a, 'b, P: Parser<I, C, S, M>, I: Input, C, S, M: Cb> {
-    parser: P,
+    parser: &'b P,
     ret: &'b mut Option<Result<ICont<'a, I, C, S, M>, LazyError<I, M>>>,
 }
-impl<'a, 'b, I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Iterator
-    for ParserIterator<'a, 'b, P, I, C, S, M>
-{
+impl<'a, 'b, I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Iterator for ParserIterator<'a, 'b, P, I, C, S, M> {
     type Item = P::Output;
     #[inline]
     fn next(&mut self) -> Option<P::Output> {
@@ -1530,7 +1473,7 @@ impl<'a, 'b, I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Iterator
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of('0'..'9').and_then(|c: char| c.to_string().parse::<isize>().map_err(prim::Error::Message));
+/// let d = one_of('0'..'9').and_then(|c: char| c.to_string().parse::<isize>().map_err(message));
 /// let p = d.to_ref().sep(char(','));
 /// assert_eq!(p.parse_ok("1,2,3,4,5"), Some(vec![1,2,3,4,5]));
 /// assert_eq!(p.parse_ok(""), Some(vec![]));
@@ -1545,15 +1488,8 @@ impl<P1: Clone, P2: Clone, O> Clone for Sep<P1, P2, O> {
     }
 }
 impl<P1: Copy, P2: Copy, O> Copy for Sep<P1, P2, O> {}
-impl<
-        O: FromIterator<P1::Output>,
-        I: Input,
-        C,
-        S: Clone,
-        M: Cb,
-        P1: Parser<I, C, S, M>,
-        P2: Parser<I, C, S, M>,
-    > ParserOnce<I, C, S, M> for Sep<P1, P2, O>
+impl<O: FromIterator<P1::Output>, I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>
+    ParserOnce<I, C, S, M> for Sep<P1, P2, O>
 {
     type Output = O;
     #[inline]
@@ -1561,20 +1497,13 @@ impl<
         self.run(cont)
     }
 }
-impl<
-        O: FromIterator<P1::Output>,
-        I: Input,
-        C,
-        S: Clone,
-        M: Cb,
-        P1: Parser<I, C, S, M>,
-        P2: Parser<I, C, S, M>,
-    > Parser<I, C, S, M> for Sep<P1, P2, O>
+impl<O: FromIterator<P1::Output>, I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>
+    Parser<I, C, S, M> for Sep<P1, P2, O>
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         let mut ret = Some(Ok(cont));
-        let iter = ParserSepIterator { parser: self.0.to_ref(), sep: self.1.to_ref(), is_first: true, ret: &mut ret };
+        let iter = ParserSepIterator { parser: &self.0, sep: &self.1, is_first: true, ret: &mut ret };
         let o = iter.collect();
         match ret.unwrap() {
             Ok(cont) => Ok((o, cont.ok)),
@@ -1587,7 +1516,7 @@ impl<
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of('0'..'9').and_then(|c: char| c.to_string().parse::<isize>().map_err(prim::Error::Message));
+/// let d = one_of('0'..'9').and_then(|c: char| c.to_string().parse::<isize>().map_err(message));
 /// let p = d.to_ref().sep1(char(','));
 /// assert_eq!(p.parse_ok("1,2,3,4,5"), Some(vec![1,2,3,4,5]));
 /// assert_eq!(p.parse_ok(""), None);
@@ -1602,15 +1531,8 @@ impl<P1: Clone, P2: Clone, O> Clone for Sep1<P1, P2, O> {
     }
 }
 impl<P1: Copy, P2: Copy, O> Copy for Sep1<P1, P2, O> {}
-impl<
-        O: FromIterator<P1::Output>,
-        I: Input,
-        C,
-        S: Clone,
-        M: Cb,
-        P1: Parser<I, C, S, M>,
-        P2: Parser<I, C, S, M>,
-    > ParserOnce<I, C, S, M> for Sep1<P1, P2, O>
+impl<O: FromIterator<P1::Output>, I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>
+    ParserOnce<I, C, S, M> for Sep1<P1, P2, O>
 {
     type Output = O;
     #[inline]
@@ -1618,23 +1540,15 @@ impl<
         self.run(cont)
     }
 }
-impl<
-        O: FromIterator<P1::Output>,
-        I: Input,
-        C,
-        S: Clone,
-        M: Cb,
-        P1: Parser<I, C, S, M>,
-        P2: Parser<I, C, S, M>,
-    > Parser<I, C, S, M> for Sep1<P1, P2, O>
+impl<O: FromIterator<P1::Output>, I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>
+    Parser<I, C, S, M> for Sep1<P1, P2, O>
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         let ICont { ok, config, drop } = cont;
         self.0.run(ICont { ok, config, drop }).and_then(|(o, ok)| {
             let mut ret = Some(Ok(ICont { ok, config, drop }));
-            let iter =
-                ParserSepIterator { parser: self.0.to_ref(), sep: self.1.to_ref(), is_first: false, ret: &mut ret };
+            let iter = ParserSepIterator { parser: &self.0, sep: &self.1, is_first: false, ret: &mut ret };
             let o = once(o).chain(iter).collect();
             match ret.unwrap() {
                 Ok(cont) => Ok((o, cont.ok)),
@@ -1648,17 +1562,17 @@ impl<
 ///
 /// A failure that does not consume input will terminate the iterator, a failure that consumes input will cause the entire iterator to fail.
 ///
-/// The `ParserSepIterator<prim::RefParser<P1>,prim::RefParser<P2>>` argument, required for `F`, is simply an iterator that returns `P1:Output`.
+/// The [`ParserSepIterator<P1,P2>`] argument, required for `F`, is simply an iterator that returns `P1:Output`.
 ///
 /// See also [`ManyWith`] and [`Sep`]
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of('0'..'9').and_then(|c: char| c.to_string().parse::<isize>().map_err(prim::Error::Message));
+/// let d = one_of('0'..'9').and_then(|c: char| c.to_string().parse::<isize>().map_err(message));
 /// let d = d.to_ref();
 /// assert_eq!(
 ///     d.sep_with(char(','), |iter| iter.take(2).collect())
-///         .and(str(",3,4,5", true))
+///         .and(str(",3,4,5").to(true))
 ///         .parse_ok("1,2,3,4,5"),
 ///     Some((vec![1,2], true))
 /// );
@@ -1676,7 +1590,7 @@ impl<
         M: Cb,
         P1: Parser<I, C, S, M>,
         P2: Parser<I, C, S, M>,
-        F: FnOnce(ParserSepIterator<RefParser<P1>, RefParser<P2>, I, C, S, M>) -> O,
+        F: FnOnce(ParserSepIterator<P1, P2, I, C, S, M>) -> O,
         O,
     > ParserOnce<I, C, S, M> for SepWith<P1, P2, F>
 {
@@ -1684,7 +1598,7 @@ impl<
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         let mut ret = Some(Ok(cont));
-        let iter = ParserSepIterator { parser: self.0.to_ref(), sep: self.1.to_ref(), is_first: true, ret: &mut ret };
+        let iter = ParserSepIterator { parser: &self.0, sep: &self.1, is_first: true, ret: &mut ret };
         let o = self.2(iter);
         match ret.unwrap() {
             Ok(cont) => Ok((o, cont.ok)),
@@ -1699,13 +1613,13 @@ impl<
         M: Cb,
         P1: Parser<I, C, S, M>,
         P2: Parser<I, C, S, M>,
-        F: Fn(ParserSepIterator<RefParser<P1>, RefParser<P2>, I, C, S, M>) -> O,
+        F: Fn(ParserSepIterator<P1, P2, I, C, S, M>) -> O,
         O,
     > Parser<I, C, S, M> for SepWith<P1, P2, F>
 {
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         let mut ret = Some(Ok(cont));
-        let iter = ParserSepIterator { parser: self.0.to_ref(), sep: self.1.to_ref(), is_first: true, ret: &mut ret };
+        let iter = ParserSepIterator { parser: &self.0, sep: &self.1, is_first: true, ret: &mut ret };
         let o = self.2(iter);
         match ret.unwrap() {
             Ok(cont) => Ok((o, cont.ok)),
@@ -1714,10 +1628,65 @@ impl<
     }
 }
 
+pub struct SepThen<P1, P2, F>(pub(crate) P1, pub(crate) P2, pub(crate) F);
+impl<
+        I: Input,
+        C,
+        S: Clone,
+        M: Cb,
+        P1: Parser<I, C, S, M>,
+        P2: Parser<I, C, S, M>,
+        F: FnOnce(ParserSepIterator<P1, P2, I, C, S, M>) -> Result<O, Eb<M>>,
+        O,
+    > ParserOnce<I, C, S, M> for SepThen<P1, P2, F>
+{
+    type Output = O;
+    #[inline]
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+        let pos = cont.ok.input.pos();
+        let mut ret = Some(Ok(cont));
+        let iter = ParserSepIterator { parser: &self.0, sep: &self.1, is_first: true, ret: &mut ret };
+        let o = self.2(iter);
+        match ret.unwrap() {
+            Ok(cont) => match o {
+                Ok(o) => Ok((o, cont.ok)),
+                Err(e) => Err(e.at::<I>(cont.ok.input.index(), pos, Some(cont.ok.input.pos())).or_merge(cont.ok.err)),
+            },
+            Err(e) => Err(e),
+        }
+    }
+}
+impl<
+        I: Input,
+        C,
+        S: Clone,
+        M: Cb,
+        P1: Parser<I, C, S, M>,
+        P2: Parser<I, C, S, M>,
+        F: Fn(ParserSepIterator<P1, P2, I, C, S, M>) -> Result<O, Eb<M>>,
+        O,
+    > Parser<I, C, S, M> for SepThen<P1, P2, F>
+{
+    #[inline]
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+        let pos = cont.ok.input.pos();
+        let mut ret = Some(Ok(cont));
+        let iter = ParserSepIterator { parser: &self.0, sep: &self.1, is_first: true, ret: &mut ret };
+        let o = self.2(iter);
+        match ret.unwrap() {
+            Ok(cont) => match o {
+                Ok(o) => Ok((o, cont.ok)),
+                Err(e) => Err(e.at::<I>(cont.ok.input.index(), pos, Some(cont.ok.input.pos())).or_merge(cont.ok.err)),
+            },
+            Err(e) => Err(e),
+        }
+    }
+}
+
 /// an iterator that returns `P1::Output`. It can only be used locally within [`SepWith`].
 pub struct ParserSepIterator<'a, 'b, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, I: Input, C, S, M: Cb> {
-    parser: P1,
-    sep: P2,
+    parser: &'b P1,
+    sep: &'b P2,
     is_first: bool,
     ret: &'b mut Option<Result<ICont<'a, I, C, S, M>, LazyError<I, M>>>,
 }

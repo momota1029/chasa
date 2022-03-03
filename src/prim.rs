@@ -3,10 +3,10 @@ use std::{fmt::Display, marker::PhantomData, ops::RangeBounds};
 use either::Either;
 
 use crate::{
-    error::{Builder, Builder as Eb, CustomBuilder as Cb},
+    error::{Builder as Eb, CustomBuilder as Cb},
     input::IntoChars,
     util::run_satisfy,
-    ICont, IOk, IResult, IReturn, Input, LazyError, Parser, ParserOnce,
+    ICont, IOk, IResult, IReturn, Input, Parser, ParserOnce,
 };
 
 impl<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, F: FnOnce() -> P> ParserOnce<I, C, S, M> for F {
@@ -132,82 +132,21 @@ impl<O: Clone, I: Input, C, S, M: Cb> Parser<I, C, S, M> for Pure<O> {
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum Error<E> {
-    Unexpect(E),
-    Message(E),
-}
-
-/// A parser that never fails. You can choose between `Error::Unexpect`, which prints "Unexpected [token]", and `Error::Message`, which prints "[msg]".
+/// A parser that never fails. You can choose between [`error::unexpect`][`crate::error::unexpect`], which prints "Unexpected \[token\]", and [`error::message`][`crate::error::message`], which prints "\[msg\]".
+/// See also [`error::Builder`][`crate::error::Builder`]
 /// ```
 /// use chasa::*;
-/// assert_eq!(fail::<(),_>(prim::Error::Unexpect("chasa")).parse_easy(""),Err("unexpected chasa at 0".to_string()));
+/// assert_eq!(fail::<_,()>(unexpect("chasa")).parse_easy(""),Err("unexpected chasa at 0".to_string()));
 /// ```
-pub struct Fail<O, E>(Error<E>, PhantomData<fn() -> O>);
-impl<O, E: Clone> Clone for Fail<O, E> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Fail(self.0.clone(), PhantomData)
-    }
+pub struct Fail<O, M: Cb>(Eb<M>, PhantomData<fn() -> O>);
+#[inline]
+pub fn fail<M: Cb, O>(err: Eb<M>) -> Fail<O, M> {
+    Fail(err, PhantomData)
 }
-impl<O, E: Copy> Copy for Fail<O, E> {}
-pub fn fail<O, E: Display + 'static>(e: Error<E>) -> Fail<O, E> {
-    Fail(e, PhantomData)
-}
-impl<O, I: Input, C, S, M: Cb, E: Display + 'static> ParserOnce<I, C, S, M> for Fail<O, E> {
+impl<O, I: Input, C, S, M: Cb> ParserOnce<I, C, S, M> for Fail<O, M> {
     type Output = O;
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        Err(match self.0 {
-            Error::Unexpect(token) => Builder::unexpected(token),
-            Error::Message(msg) => Builder::message(msg),
-        }
-        .at::<I>(cont.ok.input.index(), cont.ok.input.pos(), None))
-    }
-}
-impl<O, I: Input, C, S, M: Cb, E: Display + Clone + 'static> Parser<I, C, S, M> for Fail<O, E> {
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        Err(match &self.0 {
-            Error::Unexpect(token) => Builder::unexpected(token.clone()),
-            Error::Message(msg) => Builder::message(msg.clone()),
-        }
-        .at::<I>(cont.ok.input.index(), cont.ok.input.pos(), None))
-    }
-}
-
-/// An absolute failure parser, which delays error messages by passing a closure. You can choose between `Error::Unexpect` to show "Unexpected [token]", and `Error::Message` to show "[msg]".
-/// ```
-/// use chasa::*;
-/// assert_eq!(fail_with::<(),_,_>(prim::Error::Unexpect(||"chasa")).parse_easy(""),Err("unexpected chasa at 0".to_string()));
-/// ```
-pub struct FailWith<O, F>(Error<F>, PhantomData<fn() -> O>);
-impl<O, F: Clone> Clone for FailWith<O, F> {
-    #[inline]
-    fn clone(&self) -> Self {
-        FailWith(self.0.clone(), PhantomData)
-    }
-}
-impl<O, F: Copy> Copy for FailWith<O, F> {}
-pub fn fail_with<O, E: Display, F: Fn() -> E + 'static>(f: Error<F>) -> FailWith<O, F> {
-    FailWith(f, PhantomData)
-}
-impl<O, I: Input, C, S, M: Cb, E: Display, F: Fn() -> E + 'static> ParserOnce<I, C, S, M> for FailWith<O, F> {
-    type Output = O;
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        Err(match self.0 {
-            Error::Unexpect(token) => Builder::unexpected_with(token),
-            Error::Message(msg) => Builder::message_with(msg),
-        }
-        .at::<I>(cont.ok.input.index(), cont.ok.input.pos(), None))
-    }
-}
-impl<O, I: Input, C, S, M: Cb, E: Display, F: Fn() -> E + Clone + 'static> Parser<I, C, S, M> for FailWith<O, F> {
-    #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        Err(match &self.0 {
-            Error::Unexpect(token) => Builder::unexpected_with(token.clone()),
-            Error::Message(msg) => Builder::message_with(msg.clone()),
-        }
-        .at::<I>(cont.ok.input.index(), cont.ok.input.pos(), None))
+        Err(self.0.at::<I>(cont.ok.input.index(), cont.ok.input.pos(), None))
     }
 }
 
@@ -414,9 +353,9 @@ macro_rules! one_of_range {
             }
         }
     };
-    ($item:ident, $t:ty, $($ts:ty),+) => {
-        one_of_range!($item,$t);
-        one_of_range!($item,$($ts),+);
+    ($iter:ident, $t:ty, $($ts:ty),+) => {
+        one_of_range!($iter,$t);
+        one_of_range!($iter,$($ts),+);
     }
 }
 one_of_range!(
@@ -520,38 +459,37 @@ none_of_range!(
 );
 
 /// A parser that compares character iterators and input as they are consumed together, and accepts them if they all match.
+/// The return value is empty, as most of the time it should be intended to be a token.
+/// If you want the whole string, use `.to([string])`(see [`Value`][`crate::combi::Value`]) or `.get_str()`(see [`GetString`][`crate::combi::GetString`]).
 /// ```
 /// use chasa::*;
-/// assert_eq!(str("a", 1).parse_ok("a2"), Some(1));
-/// assert_eq!(str("a2", 1).parse_ok("a2"), Some(1));
-/// assert_eq!(str("a23", 1).parse_ok("a2"), None);
-/// assert_eq!(str("a3", 1).or(str("a", 2)).parse_ok("a2"), Some(2));
+/// assert_eq!(str("a").parse_ok("a2"), Some(()));
+/// assert_eq!(str("a2").parse_ok("a2"), Some(()));
+/// assert_eq!(str("a23").parse_ok("a2"), None);
+/// assert_eq!(str("a3").to(1).or(str("a").to(2)).parse_ok("a2"), Some(2));
 /// ```
-pub struct String<Iter, O, I, C, S, M>(Iter, O, PhantomData<fn() -> (I, C, S, M)>);
-impl<Iter: Clone, O: Clone, I, C, S, M> Clone for String<Iter, O, I, C, S, M> {
+pub struct String<Iter, I, C, S, M>(Iter, PhantomData<fn() -> (I, C, S, M)>);
+impl<Iter: Clone, I, C, S, M> Clone for String<Iter, I, C, S, M> {
     #[inline]
     fn clone(&self) -> Self {
-        String(self.0.clone(), self.1.clone(), PhantomData)
+        String(self.0.clone(), PhantomData)
     }
 }
-impl<Iter: Copy, O: Copy, I, C, S, M> Copy for String<Iter, O, I, C, S, M> {}
-pub fn str<Iter: IntoChars<Item = I::Item>, O, I: Input, C, S, M: Cb>(
-    iter: Iter, value: O,
-) -> String<Iter, O, I, C, S, M> {
-    String(iter, value, PhantomData)
+impl<Iter: Copy, I, C, S, M> Copy for String<Iter, I, C, S, M> {}
+pub fn str<Iter: IntoChars<Item = I::Item>, I: Input, C, S, M: Cb>(iter: Iter) -> String<Iter, I, C, S, M> {
+    String(iter, PhantomData)
 }
 impl<
-        O,
         I: Input<Item = impl Display + 'static>,
         C,
         S,
         M: Cb,
         Iter: IntoChars<Item = impl PartialEq<I::Item> + Display + 'static>,
-    > ParserOnce<I, C, S, M> for String<Iter, O, I, C, S, M>
+    > ParserOnce<I, C, S, M> for String<Iter, I, C, S, M>
 {
-    type Output = O;
+    type Output = ();
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<(), I, S, M> {
         let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
         let mut is_first = true;
         for str_c in self.0.into_chars() {
@@ -575,20 +513,19 @@ impl<
                 },
             }
         }
-        Ok((self.1, IOk { input, err: if is_first { err } else { None }, state, cutted: !is_first }))
+        Ok(((), IOk { input, err: if is_first { err } else { None }, state, cutted: !is_first }))
     }
 }
 impl<
-        O: Clone,
         I: Input<Item = impl Display + 'static>,
         C,
         S,
         M: Cb,
         Iter: IntoChars<Item = impl PartialEq<I::Item> + Display + 'static> + Clone,
-    > Parser<I, C, S, M> for String<Iter, O, I, C, S, M>
+    > Parser<I, C, S, M> for String<Iter, I, C, S, M>
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<(), I, S, M> {
         self.clone().run(cont)
     }
 }
@@ -596,7 +533,11 @@ impl<
 /// A parser that takes a single character satisfying a condition.
 pub struct Satisfy<F, I, C, S, M>(F, PhantomData<fn() -> (I, C, S, M)>);
 #[inline]
-pub fn satisfy<F, I, C, S, M>(f: F) -> Satisfy<F, I, C, S, M> {
+pub fn satisfy<I: Input, F: Fn(&I::Item) -> bool, C, S, M>(f: F) -> Satisfy<F, I, C, S, M> {
+    Satisfy(f, PhantomData)
+}
+#[inline]
+pub fn satisfy_once<I: Input, F: FnOnce(&I::Item) -> bool, C, S, M>(f: F) -> Satisfy<F, I, C, S, M> {
     Satisfy(f, PhantomData)
 }
 impl<F: Clone, I, C, S, M> Clone for Satisfy<F, I, C, S, M> {
@@ -660,7 +601,11 @@ where
 
 pub struct SatisfyMap<F, I, C, S, M>(F, PhantomData<fn() -> (I, C, S, M)>);
 #[inline]
-pub fn satisfy_map<F, I, C, S, M>(f: F) -> SatisfyMap<F, I, C, S, M> {
+pub fn satisfy_map<F: Fn(&I::Item) -> Option<O>, O, I: Input, C, S, M>(f: F) -> SatisfyMap<F, I, C, S, M> {
+    SatisfyMap(f, PhantomData)
+}
+#[inline]
+pub fn satisfy_map_once<F: FnOnce(&I::Item) -> Option<O>, O, I: Input, C, S, M>(f: F) -> SatisfyMap<F, I, C, S, M> {
     SatisfyMap(f, PhantomData)
 }
 impl<F: Clone, I, C, S, M> Clone for SatisfyMap<F, I, C, S, M> {

@@ -133,6 +133,7 @@ impl<M: CustomBuilder> CustomBuilder for Builder<M> {
         }
     }
 }
+
 struct LazyDisplay<F>(F);
 impl<T: Display, F: Fn() -> T> Display for LazyDisplay<F> {
     #[inline]
@@ -174,6 +175,23 @@ impl<M: CustomBuilder> Builder<M> {
     pub fn custom(msg: M) -> Self {
         Self::Custom(msg)
     }
+}
+
+#[inline]
+pub fn unexpect<M: CustomBuilder>(token: impl Display + 'static) -> Builder<M> {
+    Builder::<M>::unexpected(token)
+}
+#[inline]
+pub fn unexpect_with<M: CustomBuilder, T: Display>(token: impl Fn() -> T + 'static) -> Builder<M> {
+    Builder::<M>::unexpected_with(token)
+}
+#[inline]
+pub fn message<M: CustomBuilder>(msg: impl Display + 'static) -> Builder<M> {
+    Builder::<M>::message(msg)
+}
+#[inline]
+pub fn message_with<M: CustomBuilder, T: Display>(msg: impl Fn() -> T + 'static) -> Builder<M> {
+    Builder::<M>::message_with(msg)
 }
 
 pub type LazyError<I, M> = Pos<<I as Input>::Pos, Builder<M>>;

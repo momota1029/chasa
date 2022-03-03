@@ -3,11 +3,11 @@
 //! A parser combinator is a mechanism that allows you to combine small syntactic elements to define a larger syntax, which can then be parse directly.
 //!
 //! ```
-//! use chasa::{Parser, EasyParser, prim, prim::{one_of, char}};
+//! use chasa::{Parser, EasyParser, prim, prim::{one_of, char}, message};
 //! // It reads a number of letters (numbers) from 0 to 9,
 //! let num = one_of('0'..='9').many::<String>()
 //! // Interpreted as a number, errors are reported as a message.
-//!     .and_then(|str| str.parse::<u32>().map_err(prim::Error::Message));
+//!     .and_then(|str| str.parse::<u32>().map_err(message));
 //!
 //! // Multiply by something separated by '*' and
 //! let prod = num.sep_fold1(char('*'), |a,_,b| a * b);
@@ -29,7 +29,7 @@
 //!     Term(String),
 //!     List(Vec<SExp>),
 //! }
-//! fn sexp_like<I: Input<Item = char> + Clone>() -> impl EasyParser<I, Output = SExp> {
+//! fn sexp_like<I: Input<Item = char>>() -> impl EasyParser<I, Output = SExp> {
 //!     // The `parser` is to prevent recursion of existential types (removing it will crash the current compiler).
 //!     parser(|k| {
 //!         let term = satisfy(|c: &char| !char::is_space(c) && c != &'(' && c != &')').many1();
@@ -77,7 +77,7 @@
 //!     Null,
 //! }
 //!
-//! fn json_parser<I: Input<Item = char> + Clone>() -> impl EasyParser<I, Output = JSON> {
+//! fn json_parser<I: Input<Item = char>>() -> impl EasyParser<I, Output = JSON> {
 //!     any.case(|c, k| match c {
 //!         '{' => k
 //!             .then(
@@ -92,21 +92,20 @@
 //!         '"' => k.then(string_char.many_with(|iter| iter.map_while(|x| x).collect())).map(JSON::String),
 //!         '-' => k.then(any).bind(num_parser).map(|n| JSON::Number(-n)),
 //!         c @ '0'..='9' => k.then(num_parser(c)).map(JSON::Number),
-//!         't' => k.then(str("rue", JSON::True)),
-//!         'f' => k.then(str("alse", JSON::False)),
-//!         'n' => k.then(str("ull", JSON::Null)),
-//!         c => k.fail(prim::Error::Unexpect(c)),
+//!         't' => k.then(str("rue").to(JSON::True)),
+//!         'f' => k.then(str("alse").to(JSON::False)),
+//!         'n' => k.then(str("ull").to(JSON::Null)),
+//!         c => k.fail(error::unexpect(c)),
 //!     })
 //!     .between(whitespace, whitespace)
 //! }
 //!
-//! fn whitespace<I: Input<Item = char> + Clone>() -> impl EasyParser<I, Output = ()> {
+//! fn whitespace<I: Input<Item = char>>() -> impl EasyParser<I, Output = ()> {
 //!     one_of("\t\r\n ").skip_many()
 //! }
 //!
-//! fn string_char<I: Input<Item = char> + Clone>() -> impl EasyParser<I, Output = Option<char>> {
-//!     let hex = satisfy(|c: &char| matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F'));
-//!     any.case(move |c, k| match c {
+//! fn string_char<I: Input<Item = char>>() -> impl EasyParser<I, Output = Option<char>> {
+//!     any.case(|c, k| match c {
 //!         '\\' => k.then(any.case(|c, k| {
 //!             match c {
 //!                 '"' => k.to(Some('\"')),
@@ -119,13 +118,16 @@
 //!                 't' => k.to(Some('\t')),
 //!                 'u' => k
 //!                     .then(
-//!                         hex.many_with(|iter| iter.take(4).collect::<String>())
-//!                             .and_then(|str| if str.len() < 4 { Err(prim::Error::Unexpect("4 hex digits")) } else { Ok(str) })
-//!                             .and_then(|str| u32::from_str_radix(&str, 16).map_err(prim::Error::Message))
-//!                             .and_then(|u| char::from_u32(u).ok_or(prim::Error::Unexpect("invalid unicode char"))),
+//!                         satisfy(|c| matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F'))
+//!                         .many_then(|iter| {
+//!                             let str: String = iter.take(4).collect();
+//!                             if str.len() < 4 { Err(unexpect("4 hex digits"))? }
+//!                             char::from_u32(u32::from_str_radix(&str, 16).map_err(message)?)
+//!                                 .ok_or(unexpect("invalid unicode char"))
+//!                         })
 //!                     )
 //!                     .map(Some),
-//!                 c => k.fail(prim::Error::Unexpect(c)),
+//!                 c => k.fail(unexpect(c)),
 //!             }
 //!         })),
 //!         '"' => k.to(None),
@@ -133,36 +135,17 @@
 //!     })
 //! }
 //!
-//! fn num_parser<I: Input<Item = char> + Clone>(c: char) -> impl EasyParser<I, Output = f64> {
-//!     let digit = satisfy(|c: &char| ('0'..='9').contains(c));
-//!     parser_once(move |k| match c {
-//!         '0' => k.then(char('.').or_not().case(|c,k| if c.is_some() {
-//!             k.then(digit.extend("0.".to_string()))
-//!         } else {
-//!             k.to("0".to_string())
-//!         })),
-//!         c @ '1'..='9' => k.then(digit.extend(c.to_string())).bind(|mut str| char('.').or_not().case_once(move |c,k|
-//!             if c.is_some() {
-//!                 str.push('.');
-//!                 k.then(digit.extend(str))
-//!             }
-//!             else {
-//!                 k.to(str)
-//!             }
-//!         )),
-//!         c => k.fail(prim::Error::Unexpect(c)),
-//!     })
-//!     .bind_once(move |mut str| {
-//!         one_of("eE").or_not().case_once(move |e,k| match e {
-//!             Some(_) => k.then(one_of("+-").or_not()).bind(move |pm| {
-//!                 str.push('e');
-//!                 str.extend(pm);
-//!                 digit.extend(str)
-//!             }),
-//!             None => k.to(str)
+//! fn num_parser<I: Input<Item = char>>(c: char) -> impl EasyParser<I, Output = f64> {
+//!     let digit = satisfy(|c| ('0'..='9').contains(c));
+//!     extend_with_str(c.to_string(),
+//!         parser_once(move |k| match c {
+//!             '0' => k.done(),
+//!             c @ '1'..='9' => k.then(digit.skip_many()),
+//!             c => k.fail(unexpect(c)),
 //!         })
-//!     })
-//!     .and_then_once(|str| str.parse::<f64>().map_err(prim::Error::Message))
+//!         .left(char('.').right(digit.skip_many1()).or_not())
+//!         .left(one_of("eE").right(one_of("+-").or_not()).right(digit.skip_many1()).or_not())
+//!     ).and_then_once(|(_,str)| str.parse::<f64>().map_err(message))
 //! }
 //!
 //! assert_eq!(
@@ -184,15 +167,15 @@ pub use traits::*;
 pub mod char;
 pub use crate::char::{newline, no_break, no_break_ws, no_break_ws1, space, ws, ws1};
 pub mod combi;
-pub use combi::{before, fold, fold1, many, not_followed_by, pure_or, tail_rec};
+pub use combi::{before, extend_with_str, fold, fold1, many, not_followed_by, pure_or, tail_rec};
 pub mod cont;
 pub mod error;
-pub use error::{Error, LazyError, Nil};
+pub use error::{message, message_with, unexpect, unexpect_with, Error, LazyError, Nil};
 pub mod input;
 pub use input::Input;
 pub mod prim;
 pub use prim::{
-    any, char, config, eoi, fail, fail_with, get_state, local_state, no_state, none_of, one_of, parser, parser_once,
-    pos, pure, satisfy, satisfy_map, set_config, set_state, state, str,
+    any, char, config, eoi, fail, get_state, local_state, no_state, none_of, one_of, parser, parser_once, pos, pure,
+    satisfy, satisfy_map, set_config, set_state, state, str,
 };
 mod util;

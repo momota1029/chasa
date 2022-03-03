@@ -1,13 +1,13 @@
 use crate::{
     combi::{
-        many, many1, And, AndThen, AndThenWith, Between, Bind, Case, Cut, Extend1Parser, ExtendParser, Fold, Fold1,
-        GetString, Label, LabelWith, Left, Many, Many1, ManyWith, Map, Or, OrNot, ParserIterator, ParserSepIterator,
-        Ranged, Right, Sep, Sep1, SepExtend, SepExtend1, SepFold, SepFold1, SepWith, Value,
+        many, many1, And, AndThen, Between, Bind, Case, Cut, Extend1Parser, ExtendParser, Fold, Fold1, GetString,
+        GetStringExtend, Label, LabelWith, Left, Many, Many1, ManyThen, ManyWith, Map, Or, OrNot, ParserIterator,
+        ParserSepIterator, Ranged, Right, Sep, Sep1, SepExtend, SepExtend1, SepFold, SepFold1, SepThen, SepWith, Value,
     },
-    error::{CustomBuilder, LazyError, Nil},
+    error::{Builder, CustomBuilder, LazyError, Nil},
     fold, fold1,
     input::{Input, IntoInput},
-    prim::{self, RefParser},
+    prim::RefParser,
     Error,
 };
 use std::{fmt::Display, marker::PhantomData};
@@ -95,46 +95,45 @@ pub trait ParserOnce<I: Input, C, S, M: CustomBuilder> {
     {
         Bind(self, f)
     }
-    fn and_then_once<O, E: Display + 'static, F: FnOnce(Self::Output) -> Result<O, prim::Error<E>>>(
-        self, f: F,
-    ) -> AndThen<Self, F>
+    fn and_then_once<O, F: FnOnce(Self::Output) -> Result<O, Builder<M>>>(self, f: F) -> AndThen<Self, F>
     where
         Self: Sized,
     {
         AndThen(self, f)
     }
-    fn and_then_once_with<
-        O,
-        E: Display,
-        F2: Fn() -> E + 'static,
-        F1: FnOnce(Self::Output) -> Result<O, prim::Error<F2>>,
-    >(
-        self, f: F1,
-    ) -> AndThenWith<Self, F1, F2>
-    where
-        Self: Sized,
-    {
-        AndThenWith(self, f, PhantomData)
-    }
-    fn many_once_with<O, F: FnOnce(ParserIterator<prim::RefParser<Self>, I, C, S, M>) -> O>(
-        self, f: F,
-    ) -> ManyWith<Self, F>
+    fn many_once_with<O, F: FnOnce(ParserIterator<Self, I, C, S, M>) -> O>(self, f: F) -> ManyWith<Self, F>
     where
         Self: Sized,
     {
         ManyWith(self, f)
     }
-    fn sep_once_with<
-        O,
-        F: FnOnce(ParserSepIterator<prim::RefParser<Self>, prim::RefParser<P>, I, C, S, M>) -> O,
-        P: Parser<I, C, S, M>,
-    >(
+    fn many_once_then<O, F: FnOnce(ParserIterator<Self, I, C, S, M>) -> Result<O, Builder<M>>>(
+        self, f: F,
+    ) -> ManyThen<Self, F>
+    where
+        Self: Sized,
+    {
+        ManyThen(self, f)
+    }
+    fn sep_once_with<O, F: FnOnce(ParserSepIterator<Self, P, I, C, S, M>) -> O, P: Parser<I, C, S, M>>(
         self, sep: P, f: F,
     ) -> SepWith<Self, P, F>
     where
         Self: Sized,
     {
         SepWith(self, sep, f)
+    }
+    fn sep_once_then<
+        O,
+        F: FnOnce(ParserSepIterator<Self, P, I, C, S, M>) -> Result<O, Builder<M>>,
+        P: Parser<I, C, S, M>,
+    >(
+        self, sep: P, f: F,
+    ) -> SepThen<Self, P, F>
+    where
+        Self: Sized,
+    {
+        SepThen(self, sep, f)
     }
     #[inline]
     fn and<P: ParserOnce<I, C, S, M>>(self, other: P) -> And<Self, P>
@@ -201,6 +200,13 @@ pub trait ParserOnce<I: Input, C, S, M: CustomBuilder> {
     {
         GetString(self, PhantomData)
     }
+    #[inline]
+    fn get_str_extend<O: Extend<I::Item>>(self, value: O) -> GetStringExtend<Self, O>
+    where
+        Self: Sized,
+    {
+        GetStringExtend(self, value)
+    }
 }
 
 /// A parser that can be used again and again.
@@ -233,21 +239,11 @@ pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
     {
         Bind(self, f)
     }
-    fn and_then<O, E: Display + 'static, F: Fn(Self::Output) -> Result<O, prim::Error<E>>>(
-        self, f: F,
-    ) -> AndThen<Self, F>
+    fn and_then<O, F: Fn(Self::Output) -> Result<O, Builder<M>>>(self, f: F) -> AndThen<Self, F>
     where
         Self: Sized,
     {
         AndThen(self, f)
-    }
-    fn and_then_with<O, E: Display, F2: Fn() -> E + 'static, F1: Fn(Self::Output) -> Result<O, prim::Error<F2>>>(
-        self, f: F1,
-    ) -> AndThenWith<Self, F1, F2>
-    where
-        Self: Sized,
-    {
-        AndThenWith(self, f, PhantomData)
     }
     fn fold<T, F: Fn(T, Self::Output) -> T>(self, init: T, f: F) -> Fold<T, Self, F>
     where
@@ -325,11 +321,17 @@ pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
     {
         many1(self)
     }
-    fn many_with<O, F: Fn(ParserIterator<prim::RefParser<Self>, I, C, S, M>) -> O>(self, f: F) -> ManyWith<Self, F>
+    fn many_with<O, F: Fn(ParserIterator<Self, I, C, S, M>) -> O>(self, f: F) -> ManyWith<Self, F>
     where
         Self: Sized,
     {
         ManyWith(self, f)
+    }
+    fn many_then<O, F: Fn(ParserIterator<Self, I, C, S, M>) -> Result<O, Builder<M>>>(self, f: F) -> ManyThen<Self, F>
+    where
+        Self: Sized,
+    {
+        ManyThen(self, f)
     }
     fn sep<B: FromIterator<Self::Output>, P: Parser<I, C, S, M>>(self, sep: P) -> Sep<Self, P, B>
     where
@@ -343,17 +345,21 @@ pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
     {
         Sep1(self, sep, PhantomData)
     }
-    fn sep_with<
-        O,
-        F: Fn(ParserSepIterator<prim::RefParser<Self>, prim::RefParser<P>, I, C, S, M>) -> O,
-        P: Parser<I, C, S, M>,
-    >(
+    fn sep_with<O, F: Fn(ParserSepIterator<Self, P, I, C, S, M>) -> O, P: Parser<I, C, S, M>>(
         self, sep: P, f: F,
     ) -> SepWith<Self, P, F>
     where
         Self: Sized,
     {
         SepWith(self, sep, f)
+    }
+    fn sep_then<O, F: Fn(ParserSepIterator<Self, P, I, C, S, M>) -> Result<O, Builder<M>>, P: Parser<I, C, S, M>>(
+        self, sep: P, f: F,
+    ) -> SepThen<Self, P, F>
+    where
+        Self: Sized,
+    {
+        SepThen(self, sep, f)
     }
 }
 

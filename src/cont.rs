@@ -4,7 +4,6 @@ use crate::{
     before, combi,
     error::{Builder as Eb, CustomBuilder as Cb},
     not_followed_by,
-    prim::Error,
     util::run_drop,
     ICont, IOk, IReturn, Input, Parser, ParserOnce,
 };
@@ -31,12 +30,8 @@ impl<'a, I: Input, C, S, M: Cb> ICont<'a, I, C, S, M> {
         IReturn(p.run_once(ICont { config, drop, ok }).map(|(o, ok)| (o, ok.to_cont(config, drop))))
     }
     #[inline]
-    pub fn fail<O, E: Display + 'static>(self, err: Error<E>) -> IReturn<'a, O, I, C, S, M> {
-        IReturn(Err(match err {
-            Error::Unexpect(token) => Eb::unexpected(token),
-            Error::Message(msg) => Eb::message(msg),
-        }
-        .at::<I>(self.ok.input.index(), self.ok.input.pos(), None)))
+    pub fn fail<O>(self, err: Eb<M>) -> IReturn<'a, O, I, C, S, M> {
+        IReturn(Err(err.at::<I>(self.ok.input.index(), self.ok.input.pos(), None)))
     }
     #[inline]
     pub fn config<O, F: FnOnce(&C, Self) -> IReturn<'a, O, I, C, S, M>>(self, f: F) -> IReturn<'a, O, I, C, S, M> {

@@ -5,6 +5,7 @@ use crate::{
     ICont, IOk, IResult, Input, LazyError, ParserOnce,
 };
 
+#[inline]
 pub(crate) fn run_drop<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, T>(
     p: P, cont: ICont<I, C, S, M>, dropped: T,
 ) -> (IResult<P::Output, I, S, M>, Option<T>) {
@@ -23,7 +24,7 @@ pub(crate) fn run_drop<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, T>(
     (res, dropped)
 }
 
-#[inline]
+#[inline(always)]
 pub fn run_satisfy<I: Input<Item = impl Display + 'static>, M: Cb, O>(
     input: &mut I, drop: &mut dyn FnMut(), cutted: bool, f: impl FnOnce(I::Item) -> Result<O, I::Item>,
 ) -> Result<O, LazyError<I, M>> {
