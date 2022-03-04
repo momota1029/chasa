@@ -1,6 +1,7 @@
 # chasa
 [![Crates.io](https://img.shields.io/crates/v/chasa.svg)](https://crates.io/crates/chasa)
 [![Docs](https://docs.rs/chasa/badge.svg)](https://docs.rs/chasa)
+
 A parser combinator with `many` taking iterator, conditional branching, and method chain.
 
 A parser combinator is a mechanism that allows you to combine small syntactic elements to define a larger syntax, which can then be parse directly.
