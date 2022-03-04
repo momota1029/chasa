@@ -84,7 +84,7 @@
 //!                 char('"')
 //!                     .right(string_char.many_with(|iter| iter.map_while(|x| x).collect()))
 //!                     .between(whitespace, whitespace)
-//!                     .bind(|key| char(':').right(json_parser).map_once(move |value| (key, value)))
+//!                     .bind(|key| char(':').right(json_parser).map_mv(move |value| (key, value)))
 //!                     .sep(char(',')),
 //!             ).left(char('}'))
 //!             .map(JSON::Object),
@@ -136,16 +136,16 @@
 //! }
 //!
 //! fn num_parser<I: Input<Item = char>>(c: char) -> impl EasyParser<I, Output = f64> {
-//!     let digit = satisfy(|c| ('0'..='9').contains(c));
+//!     let digit = one_of('0'..='9');
 //!     extend_with_str(c.to_string(),
-//!         parser_once(move |k| match c {
+//!         parser_mv(move |k| match c {
 //!             '0' => k.done(),
 //!             c @ '1'..='9' => k.then(digit.skip_many()),
 //!             c => k.fail(unexpect(c)),
 //!         })
 //!         .left(char('.').right(digit.skip_many1()).or_not())
 //!         .left(one_of("eE").right(one_of("+-").or_not()).right(digit.skip_many1()).or_not())
-//!     ).and_then_once(|(_,str)| str.parse::<f64>().map_err(message))
+//!     ).and_then_mv(|(_,str)| str.parse::<f64>().map_err(message))
 //! }
 //!
 //! assert_eq!(
@@ -175,7 +175,7 @@ pub mod input;
 pub use input::Input;
 pub mod prim;
 pub use prim::{
-    any, char, config, eoi, fail, get_state, local_state, no_state, none_of, one_of, parser, parser_once, pos, pure,
+    any, char, config, eoi, fail, get_state, local_state, no_state, none_of, one_of, parser, parser_mv, pos, pure,
     satisfy, satisfy_map, set_config, set_state, state, str,
 };
 mod util;

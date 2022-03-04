@@ -335,8 +335,8 @@ impl<
 ///     'a' => Ok(true),
 ///     _ => Err(message("hello"))
 /// });
-/// assert_eq!(p.to_ref().parse_ok("abc"), Some(true));
-/// assert_eq!(p.to_ref().parse_ok("cba"), None);
+/// assert_eq!(p.parse_ok("abc"), Some(true));
+/// assert_eq!(p.parse_easy("cba"), Err("hello at 0..1".to_string()));
 /// ```
 #[derive(Clone, Copy)]
 pub struct AndThen<P, F>(pub(crate) P, pub(crate) F);
@@ -370,7 +370,7 @@ impl<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>, O, F: Fn(P::Output) -> Result
 
 /// If the first parser fails without consuming any input, try the next parser.
 /// It is more efficient to assume that the syntax is determined when the first parser consumes input.
-/// See also `cut` for input consumption.
+/// See also [`Cut`] for input consumption.
 /// # Example
 /// ```
 /// use chasa::*;
@@ -1381,6 +1381,7 @@ impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, F: Fn(ParserIterator<P
 /// Failures that do not consume input terminate the iterator, while failures that consume input cause the entire parser to fail.
 /// A function can return an error::Builder<M> as its return value, which also causes the entire parser to fail.
 /// The mandatory [`ParserIterator<P>`] argument to `F` is simply an iterator returning `P::Output`.
+#[derive(Clone, Copy)]
 pub struct ManyThen<P, F>(pub(crate) P, pub(crate) F);
 impl<
         I: Input,
@@ -1473,7 +1474,7 @@ impl<'a, 'b, I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Iterator for P
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of('0'..'9').and_then(|c: char| c.to_string().parse::<isize>().map_err(message));
+/// let d = one_of('0'..='9').and_then(|c: char| c.to_string().parse::<isize>().map_err(message));
 /// let p = d.to_ref().sep(char(','));
 /// assert_eq!(p.parse_ok("1,2,3,4,5"), Some(vec![1,2,3,4,5]));
 /// assert_eq!(p.parse_ok(""), Some(vec![]));
@@ -1516,7 +1517,7 @@ impl<O: FromIterator<P1::Output>, I: Input, C, S: Clone, M: Cb, P1: Parser<I, C,
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of('0'..'9').and_then(|c: char| c.to_string().parse::<isize>().map_err(message));
+/// let d = one_of('0'..='9').and_then(|c: char| c.to_string().parse::<isize>().map_err(message));
 /// let p = d.to_ref().sep1(char(','));
 /// assert_eq!(p.parse_ok("1,2,3,4,5"), Some(vec![1,2,3,4,5]));
 /// assert_eq!(p.parse_ok(""), None);
@@ -1568,7 +1569,7 @@ impl<O: FromIterator<P1::Output>, I: Input, C, S: Clone, M: Cb, P1: Parser<I, C,
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of('0'..'9').and_then(|c: char| c.to_string().parse::<isize>().map_err(message));
+/// let d = one_of('0'..='9').and_then(|c: char| c.to_string().parse::<isize>().map_err(message));
 /// let d = d.to_ref();
 /// assert_eq!(
 ///     d.sep_with(char(','), |iter| iter.take(2).collect())
@@ -1582,6 +1583,7 @@ impl<O: FromIterator<P1::Output>, I: Input, C, S: Clone, M: Cb, P1: Parser<I, C,
 ///     Some(vec![1,2,3,4])
 /// );
 /// ```
+#[derive(Clone, Copy)]
 pub struct SepWith<P1, P2, F>(pub(crate) P1, pub(crate) P2, pub(crate) F);
 impl<
         I: Input,
@@ -1628,6 +1630,7 @@ impl<
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct SepThen<P1, P2, F>(pub(crate) P1, pub(crate) P2, pub(crate) F);
 impl<
         I: Input,

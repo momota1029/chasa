@@ -45,21 +45,20 @@ pub struct IReturn<'a, O, I: Input, C, S, M: CustomBuilder>(
 );
 
 /// A parser that can be run only once, like `FnOnce`.
-/// Some functions are marked with `once` because the callback only needs to be executed once.
-/// Often used to process values.
+/// It is a parser that owns the value, processes it and returns it. Unlike normal parsers, it is renamed `map_mv` because it only needs to pass FnOnce for map and bind.
 /// `I` is a stream with position, `C` is an immutable value that the whole parser refers to (an argument if it's a function), `S` is a variable value that the whole parser refers to (like a global variable), and `M` is a type for defining your own errors.
 /// See Output type for the function of each parser.
 pub trait ParserOnce<I: Input, C, S, M: CustomBuilder> {
     type Output;
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Self::Output, I, S, M>;
 
-    fn case_once<F: FnOnce(Self::Output, ICont<I, C, S, M>) -> IReturn<O, I, C, S, M>, O>(self, f: F) -> Case<Self, F>
+    fn case_mv<F: FnOnce(Self::Output, ICont<I, C, S, M>) -> IReturn<O, I, C, S, M>, O>(self, f: F) -> Case<Self, F>
     where
         Self: Sized,
     {
         Case(self, f)
     }
-    fn map_once<F: FnOnce(Self::Output) -> O, O>(self, f: F) -> Map<Self, F>
+    fn map_mv<F: FnOnce(Self::Output) -> O, O>(self, f: F) -> Map<Self, F>
     where
         Self: Sized,
     {
@@ -89,25 +88,25 @@ pub trait ParserOnce<I: Input, C, S, M: CustomBuilder> {
     {
         LabelWith(self, label)
     }
-    fn bind_once<F: FnOnce(Self::Output) -> P, P: ParserOnce<I, C, S, M>>(self, f: F) -> Bind<Self, F>
+    fn bind_mv<F: FnOnce(Self::Output) -> P, P: ParserOnce<I, C, S, M>>(self, f: F) -> Bind<Self, F>
     where
         Self: Sized,
     {
         Bind(self, f)
     }
-    fn and_then_once<O, F: FnOnce(Self::Output) -> Result<O, Builder<M>>>(self, f: F) -> AndThen<Self, F>
+    fn and_then_mv<O, F: FnOnce(Self::Output) -> Result<O, Builder<M>>>(self, f: F) -> AndThen<Self, F>
     where
         Self: Sized,
     {
         AndThen(self, f)
     }
-    fn many_once_with<O, F: FnOnce(ParserIterator<Self, I, C, S, M>) -> O>(self, f: F) -> ManyWith<Self, F>
+    fn many_mv_with<O, F: FnOnce(ParserIterator<Self, I, C, S, M>) -> O>(self, f: F) -> ManyWith<Self, F>
     where
         Self: Sized,
     {
         ManyWith(self, f)
     }
-    fn many_once_then<O, F: FnOnce(ParserIterator<Self, I, C, S, M>) -> Result<O, Builder<M>>>(
+    fn many_mv_then<O, F: FnOnce(ParserIterator<Self, I, C, S, M>) -> Result<O, Builder<M>>>(
         self, f: F,
     ) -> ManyThen<Self, F>
     where
@@ -115,7 +114,7 @@ pub trait ParserOnce<I: Input, C, S, M: CustomBuilder> {
     {
         ManyThen(self, f)
     }
-    fn sep_once_with<O, F: FnOnce(ParserSepIterator<Self, P, I, C, S, M>) -> O, P: Parser<I, C, S, M>>(
+    fn sep_mv_with<O, F: FnOnce(ParserSepIterator<Self, P, I, C, S, M>) -> O, P: Parser<I, C, S, M>>(
         self, sep: P, f: F,
     ) -> SepWith<Self, P, F>
     where
@@ -123,7 +122,7 @@ pub trait ParserOnce<I: Input, C, S, M: CustomBuilder> {
     {
         SepWith(self, sep, f)
     }
-    fn sep_once_then<
+    fn sep_mv_then<
         O,
         F: FnOnce(ParserSepIterator<Self, P, I, C, S, M>) -> Result<O, Builder<M>>,
         P: Parser<I, C, S, M>,

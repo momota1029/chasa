@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     error::{Builder as Eb, CustomBuilder as Cb},
+    input::IntoChars,
     ICont, IOk, IResult, Input, LazyError, ParserOnce,
 };
 
@@ -42,5 +43,48 @@ pub fn run_satisfy<I: Input<Item = impl Display + 'static>, M: Cb, O>(
             },
             Err(item) => Err(Eb::unexpected(item).at::<I>(input.index(), pos, Some(input.pos()))),
         },
+    }
+}
+
+/// Currently, Range cannot be copied, so one_of cannot be copied either. Countermeasure.
+pub trait CharsOrRange<Item> {
+    type To;
+    fn to(self) -> Self::To;
+}
+impl<I: IntoChars> CharsOrRange<<I as IntoChars>::Item> for I {
+    type To = I;
+    #[inline]
+    fn to(self) -> Self {
+        self
+    }
+}
+macro_rules! chars_as_range {
+    ($item:ident, $t:ty) =>{
+        impl<$item: ranges::Domain> CharsOrRange<$item> for $t {
+            type To = ranges::GenericRange<$item>;
+            #[inline]
+            fn to(self) -> Self::To {
+                ranges::GenericRange::from(self)
+            }
+        }
+    };
+    ($iter:ident, $t:ty, $($ts:ty),+) => {
+        chars_as_range!($iter,$t);
+        chars_as_range!($iter,$($ts),+);
+    }
+}
+chars_as_range!(
+    Item,
+    std::ops::Range<Item>,
+    std::ops::RangeFrom<Item>,
+    std::ops::RangeTo<Item>,
+    std::ops::RangeInclusive<Item>,
+    std::ops::RangeToInclusive<Item>
+);
+impl<Item: ranges::Domain> CharsOrRange<Item> for std::ops::RangeFull {
+    type To = ranges::GenericRange<Item>;
+    #[inline]
+    fn to(self) -> Self::To {
+        ranges::GenericRange::from(self)
     }
 }
