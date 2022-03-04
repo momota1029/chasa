@@ -11,6 +11,7 @@ use crate::{
         SepThen, SepWith,
     },
     prim::RefParser,
+    util::RangeWithOrd,
     Error,
 };
 use std::{fmt::Display, marker::PhantomData};
@@ -363,9 +364,7 @@ pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
     {
         SepThen(self, sep, f)
     }
-    fn repeat<O: FromIterator<Self::Output>, N: Into<ranges::GenericRange<usize>>>(
-        self, count: N,
-    ) -> Repeat<Self, ranges::GenericRange<usize>, O>
+    fn repeat<O: FromIterator<Self::Output>, N: RangeWithOrd<usize>>(self, count: N) -> Repeat<Self, O>
     where
         Self: Sized,
     {

@@ -10,4 +10,3 @@ license = "Apache-2.0"
 
 [dependencies]
 either = "1.6.1"
-ranges = "0.3"

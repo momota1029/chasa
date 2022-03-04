@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::Bound};
 
 use crate::{
     error::{Builder as Eb, CustomBuilder as Cb},
@@ -60,11 +60,11 @@ impl<I: IntoChars> CharsOrRange<<I as IntoChars>::Item> for I {
 }
 macro_rules! chars_as_range {
     ($item:ident, $t:ty) =>{
-        impl<$item: ranges::Domain> CharsOrRange<$item> for $t {
-            type To = ranges::GenericRange<$item>;
+        impl<$item> CharsOrRange<$item> for $t {
+            type To = (Bound<$item>, Bound<$item>);
             #[inline]
             fn to(self) -> Self::To {
-                ranges::GenericRange::from(self)
+                self.to_pair()
             }
         }
     };
@@ -81,13 +81,6 @@ chars_as_range!(
     std::ops::RangeInclusive<Item>,
     std::ops::RangeToInclusive<Item>
 );
-impl<Item: ranges::Domain> CharsOrRange<Item> for std::ops::RangeFull {
-    type To = ranges::GenericRange<Item>;
-    #[inline]
-    fn to(self) -> Self::To {
-        ranges::GenericRange::from(self)
-    }
-}
 
 #[inline(always)]
 pub fn run<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>>(parser: P) -> impl Parser<I, C, S, M, Output = P::Output> {
@@ -99,4 +92,45 @@ pub fn run_mv<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>>(
     parser: P,
 ) -> impl ParserOnce<I, C, S, M, Output = P::Output> {
     prim::parser_mv(move |k| k.then(parser))
+}
+
+/// Currently, Range cannot be copied, so [`repeat`][`crate::many::Repeat`] cannot be copied either. Countermeasure.
+pub trait RangeWithOrd<T> {
+    fn to_pair(self) -> (Bound<T>, Bound<T>);
+}
+impl RangeWithOrd<usize> for usize {
+    fn to_pair(self) -> (Bound<usize>, Bound<usize>) {
+        (Bound::Included(self.clone()), Bound::Included(self))
+    }
+}
+impl<T> RangeWithOrd<T> for std::ops::Range<T> {
+    fn to_pair(self) -> (Bound<T>, Bound<T>) {
+        (Bound::Included(self.start), Bound::Excluded(self.end))
+    }
+}
+impl<T> RangeWithOrd<T> for std::ops::RangeInclusive<T> {
+    fn to_pair(self) -> (Bound<T>, Bound<T>) {
+        let (start, end) = self.into_inner();
+        (Bound::Included(start), Bound::Included(end))
+    }
+}
+impl<T> RangeWithOrd<T> for std::ops::RangeFrom<T> {
+    fn to_pair(self) -> (Bound<T>, Bound<T>) {
+        (Bound::Excluded(self.start), Bound::Unbounded)
+    }
+}
+impl<T> RangeWithOrd<T> for std::ops::RangeTo<T> {
+    fn to_pair(self) -> (Bound<T>, Bound<T>) {
+        (Bound::Unbounded, Bound::Excluded(self.end))
+    }
+}
+impl<T> RangeWithOrd<T> for std::ops::RangeToInclusive<T> {
+    fn to_pair(self) -> (Bound<T>, Bound<T>) {
+        (Bound::Unbounded, Bound::Included(self.end))
+    }
+}
+impl<T> RangeWithOrd<T> for std::ops::RangeFull {
+    fn to_pair(self) -> (Bound<T>, Bound<T>) {
+        (Bound::Unbounded, Bound::Unbounded)
+    }
 }

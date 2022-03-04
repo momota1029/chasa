@@ -1,12 +1,6 @@
-use std::{
-    iter::once,
-};
+use std::iter::once;
 
-use crate::{
-    error::{CustomBuilder as Cb},
-    util::run_drop,
-    ICont, IOk, IResult, Input, Parser, ParserOnce,
-};
+use crate::{error::CustomBuilder as Cb, util::run_drop, ICont, IOk, IResult, Input, Parser, ParserOnce};
 
 fn run_fold<O, I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>>(
     o: O, p: P, cont: ICont<I, C, S, M>, f: impl Fn(O, P::Output) -> O,

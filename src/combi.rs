@@ -1,7 +1,4 @@
-use std::{
-    fmt::Display,
-    marker::PhantomData,
-};
+use std::{fmt::Display, marker::PhantomData};
 
 use either::Either;
 

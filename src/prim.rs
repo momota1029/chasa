@@ -1,4 +1,4 @@
-use std::{fmt::Display, marker::PhantomData, ops::RangeBounds};
+use std::{fmt::Display, marker::PhantomData, ops::{Bound, RangeBounds}};
 
 use either::Either;
 
@@ -336,7 +336,7 @@ where
     }
 }
 impl<I: Input, C, S, M: Cb, Item: PartialOrd<I::Item>> ParserOnce<I, C, S, M>
-    for OneOf<ranges::GenericRange<Item>, Item, I, C, S, M>
+    for OneOf<(Bound<Item>,Bound<Item>), Item, I, C, S, M>
 where
     I::Item: PartialOrd<Item> + Display + 'static,
 {
@@ -417,7 +417,7 @@ impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::It
     }
 }
 impl<I: Input<Item = impl PartialOrd<Item> + Display + 'static>, C, S, M: Cb, Item: PartialOrd<I::Item>>
-    ParserOnce<I, C, S, M> for NoneOf<ranges::GenericRange<Item>, Item, I, C, S, M>
+    ParserOnce<I, C, S, M> for NoneOf<(Bound<Item>,Bound<Item>), Item, I, C, S, M>
 {
     type Output = I::Item;
     #[inline]

@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     error::{Builder as Eb, CustomBuilder as Cb},
-    util::run_drop,
+    util::{run_drop, RangeWithOrd},
     ICont, IOk, IResult, Input, LazyError, Parser, ParserOnce,
 };
 
@@ -533,23 +533,37 @@ impl<'a, 'b, I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I,
 /// assert_eq!(char('a').repeat(4).parse_ok("aaaaa"), Some("aaaa".to_string()));
 /// assert_eq!(char('a').repeat(1..=3).parse_ok("aaaaa"), Some("aaa".to_string()));
 /// ```
-pub struct Repeat<P, N, O>(P, N, PhantomData<fn() -> O>);
-#[inline]
-pub fn repeat<P, N: Into<ranges::GenericRange<usize>>, O>(
-    parser: P, count: N,
-) -> Repeat<P, ranges::GenericRange<usize>, O> {
-    Repeat(parser, count.into(), PhantomData)
+pub struct Repeat<P, O> {
+    parser: P,
+    start: usize,
+    end: Option<usize>,
+    _marker: PhantomData<fn() -> O>,
 }
-impl<P: Clone, N: Clone, O> Clone for Repeat<P, N, O> {
+#[inline]
+pub fn repeat<P, N: RangeWithOrd<usize>, O>(parser: P, count: N) -> Repeat<P, O> {
+    let range = count.to_pair();
+    let start = match range.start_bound() {
+        Bound::Included(&start) => start,
+        Bound::Excluded(&start) => start + 1,
+        Bound::Unbounded => 0,
+    };
+    let end = match range.end_bound() {
+        Bound::Included(&end) => Some(end),
+        Bound::Excluded(&end) => Some(end - 1),
+        Bound::Unbounded => None,
+    };
+    Repeat { parser, start, end, _marker: PhantomData }
+}
+impl<P: Clone, O> Clone for Repeat<P, O> {
     #[inline]
     fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1.clone(), PhantomData)
+        Self { parser: self.parser.clone(), start: self.start, end: self.end, _marker: PhantomData }
     }
 }
-impl<P: Copy, N: Copy, O> Copy for Repeat<P, N, O> {}
+impl<P: Copy, O> Copy for Repeat<P, O> {}
 
-impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: FromIterator<P::Output>, N> Parser<I, C, S, M>
-    for Repeat<P, N, O>
+impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: FromIterator<P::Output>> Parser<I, C, S, M>
+    for Repeat<P, O>
 where
     Self: ParserOnce<I, C, S, M, Output = O> + Clone,
 {
@@ -559,43 +573,16 @@ where
     }
 }
 impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: FromIterator<P::Output>> ParserOnce<I, C, S, M>
-    for Repeat<P, usize, O>
+    for Repeat<P, O>
 {
     type Output = O;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        if self.1 == 0 {
+        if self.end == Some(0) {
             return Ok((std::iter::empty().collect(), cont.ok));
         }
         let mut ret = Some(Ok(cont));
-        let o = RepeatIter { p: &self.0, i: 0, start: self.1, end: Some(self.1), ret: &mut ret }.collect::<O>();
-        match ret.unwrap() {
-            Ok(cont) => Ok((o, cont.ok)),
-            Err(e) => Err(e),
-        }
-    }
-}
-impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: FromIterator<P::Output>> ParserOnce<I, C, S, M>
-    for Repeat<P, ranges::GenericRange<usize>, O>
-{
-    type Output = O;
-    #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        if self.1.is_empty() {
-            return Ok((std::iter::empty().collect(), cont.ok));
-        }
-        let mut ret = Some(Ok(cont));
-        let start = match self.1.start_bound() {
-            Bound::Included(&start) => start,
-            Bound::Excluded(&start) => start + 1,
-            Bound::Unbounded => 0,
-        };
-        let end = match self.1.end_bound() {
-            Bound::Included(&end) => Some(end),
-            Bound::Excluded(&end) => Some(end - 1),
-            Bound::Unbounded => None,
-        };
-        let o = RepeatIter { p: &self.0, i: 0, start, end, ret: &mut ret }.collect::<O>();
+        let o = RepeatIter { p: &self.parser, i: 0, start: self.start, end: self.end, ret: &mut ret }.collect::<O>();
         match ret.unwrap() {
             Ok(cont) => Ok((o, cont.ok)),
             Err(e) => Err(e),
