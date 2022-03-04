@@ -119,11 +119,10 @@
 //!                 'u' => k
 //!                     .then(
 //!                         satisfy(|c| matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F'))
-//!                         .many_then(|iter| {
-//!                             let str: String = iter.take(4).collect();
-//!                             if str.len() < 4 { Err(unexpect("4 hex digits"))? }
+//!                         .repeat::<String,_>(4)
+//!                         .and_then(|str| {
 //!                             char::from_u32(u32::from_str_radix(&str, 16).map_err(message)?)
-//!                                 .ok_or(unexpect("invalid unicode char"))
+//!                             .ok_or(unexpect("invalid unicode char"))
 //!                         })
 //!                     )
 //!                     .map(Some),

@@ -1,8 +1,9 @@
 use crate::{
     combi::{
-        many, many1, And, AndThen, Between, Bind, Case, Cut, Extend1Parser, ExtendParser, Fold, Fold1, GetString,
-        GetStringExtend, Label, LabelWith, Left, Many, Many1, ManyThen, ManyWith, Map, Or, OrNot, ParserIterator,
-        ParserSepIterator, Ranged, Right, Sep, Sep1, SepExtend, SepExtend1, SepFold, SepFold1, SepThen, SepWith, Value,
+        many, many1, repeat, And, AndThen, Between, Bind, Case, Cut, Extend1Parser, ExtendParser, Fold, Fold1,
+        GetString, GetStringExtend, Label, LabelWith, Left, Many, Many1, ManyThen, ManyWith, Map, Or, OrNot,
+        ParserIterator, ParserSepIterator, Ranged, Repeat, Right, Sep, Sep1, SepExtend, SepExtend1, SepFold, SepFold1,
+        SepThen, SepWith, Value,
     },
     error::{Builder, CustomBuilder, LazyError, Nil},
     fold, fold1,
@@ -359,6 +360,14 @@ pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
         Self: Sized,
     {
         SepThen(self, sep, f)
+    }
+    fn repeat<O: FromIterator<Self::Output>, N: Into<ranges::GenericRange<usize>>>(
+        self, count: N,
+    ) -> Repeat<Self, ranges::GenericRange<usize>, O>
+    where
+        Self: Sized,
+    {
+        repeat(self, count)
     }
 }
 

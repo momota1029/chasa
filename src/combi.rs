@@ -1,4 +1,9 @@
-use std::{fmt::Display, iter::once, marker::PhantomData};
+use std::{
+    fmt::Display,
+    iter::once,
+    marker::PhantomData,
+    ops::{Bound, RangeBounds},
+};
 
 use either::Either;
 
@@ -1740,6 +1745,135 @@ impl<'a, 'b, I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I,
             (Err(e), Some((input, state))) => {
                 *self.ret = Some(Ok(IOk { input, state, err: Some(e), cutted }.to_cont(config, drop)));
                 None
+            },
+        }
+    }
+}
+
+/// Repeat a specified number of times, either range or usize.
+/// ```
+/// use chasa::*;
+/// assert_eq!(char('a').repeat(2).parse_ok("aaa"), Some("aa".to_string()));
+/// assert_eq!(char('a').repeat(4).parse_ok("aaaaa"), Some("aaaa".to_string()));
+/// assert_eq!(char('a').repeat(1..=3).parse_ok("aaaaa"), Some("aaa".to_string()));
+/// ```
+pub struct Repeat<P, N, O>(P, N, PhantomData<fn() -> O>);
+#[inline]
+pub fn repeat<P, N: Into<ranges::GenericRange<usize>>, O>(
+    parser: P, count: N,
+) -> Repeat<P, ranges::GenericRange<usize>, O> {
+    Repeat(parser, count.into(), PhantomData)
+}
+impl<P: Clone, N: Clone, O> Clone for Repeat<P, N, O> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone(), PhantomData)
+    }
+}
+impl<P: Copy, N: Copy, O> Copy for Repeat<P, N, O> {}
+
+impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: FromIterator<P::Output>, N> Parser<I, C, S, M>
+    for Repeat<P, N, O>
+where
+    Self: ParserOnce<I, C, S, M, Output = O> + Clone,
+{
+    #[inline]
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+        self.clone().run_once(cont)
+    }
+}
+impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: FromIterator<P::Output>> ParserOnce<I, C, S, M>
+    for Repeat<P, usize, O>
+{
+    type Output = O;
+    #[inline]
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+        if self.1 == 0 {
+            return Ok((std::iter::empty().collect(), cont.ok));
+        }
+        let mut ret = Some(Ok(cont));
+        let o = RepeatIter { p: &self.0, i: 0, start: Some(self.1), end: Some(self.1), ret: &mut ret }.collect::<O>();
+        match ret.unwrap() {
+            Ok(cont) => Ok((o, cont.ok)),
+            Err(e) => Err(e),
+        }
+    }
+}
+impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: FromIterator<P::Output>> ParserOnce<I, C, S, M>
+    for Repeat<P, ranges::GenericRange<usize>, O>
+{
+    type Output = O;
+    #[inline]
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+        if self.1.is_empty() {
+            return Ok((std::iter::empty().collect(), cont.ok));
+        }
+        let mut ret = Some(Ok(cont));
+        let start = match self.1.start_bound() {
+            Bound::Included(&start) => Some(start),
+            Bound::Excluded(&start) => Some(start + 1),
+            Bound::Unbounded => None,
+        };
+        let end = match self.1.end_bound() {
+            Bound::Included(&end) => Some(end),
+            Bound::Excluded(&end) => Some(end - 1),
+            Bound::Unbounded => None,
+        };
+        let o = RepeatIter { p: &self.0, i: 0, start, end, ret: &mut ret }.collect::<O>();
+        match ret.unwrap() {
+            Ok(cont) => Ok((o, cont.ok)),
+            Err(e) => Err(e),
+        }
+    }
+}
+pub struct RepeatIter<'a, 'b, I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> {
+    p: &'a P,
+    i: usize,
+    ret: &'a mut Option<Result<ICont<'b, I, C, S, M>, LazyError<I, M>>>,
+    start: Option<usize>,
+    end: Option<usize>,
+}
+impl<'a, 'b, I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>> Iterator for RepeatIter<'a, 'b, I, C, S, M, P> {
+    type Item = P::Output;
+    #[inline]
+    fn next(&mut self) -> Option<P::Output> {
+        if let Some(end) = self.end {
+            if self.i >= end {
+                return None;
+            }
+        }
+        match self.ret.take()? {
+            Err(_) => None,
+            Ok(ICont { ok, config, drop }) => {
+                let (input, state, cutted) = (ok.input.clone(), ok.state.clone(), ok.cutted);
+                if cutted {
+                    drop()
+                }
+                match run_drop(self.p.to_ref(), ICont { ok, config, drop }, (input, state)) {
+                    (Ok((o, ok)), _) => {
+                        self.i += 1;
+                        *self.ret = Some(Ok(ok.to_cont(config, drop)));
+                        Some(o)
+                    },
+                    (Err(e), None) => {
+                        *self.ret = Some(Err(e));
+                        None
+                    },
+                    (Err(e), Some((input, state))) => {
+                        *self.ret = Some({
+                            if let Some(start) = self.start {
+                                if start > self.i {
+                                    Err(e)
+                                } else {
+                                    Ok(IOk { input, state, err: Some(e), cutted }.to_cont(config, drop))
+                                }
+                            } else {
+                                Ok(IOk { input, state, err: Some(e), cutted }.to_cont(config, drop))
+                            }
+                        });
+                        None
+                    },
+                }
             },
         }
     }
