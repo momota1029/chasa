@@ -1,8 +1,8 @@
 use std::fmt::{self, Display};
 
 use crate::{
-    combi::tail_rec,
     error::{CustomBuilder as Cb, Nil},
+    fold::tail_rec,
     input::Counter,
     prim::{char, no_state, satisfy_map},
     satisfy, Input, Parser, ParserOnce,

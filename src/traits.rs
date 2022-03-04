@@ -1,13 +1,15 @@
 use crate::{
     combi::{
-        many, many1, repeat, And, AndThen, Between, Bind, Case, Cut, Extend1Parser, ExtendParser, Fold, Fold1,
-        GetString, GetStringExtend, Label, LabelWith, Left, Many, Many1, ManyThen, ManyWith, Map, Or, OrNot,
-        ParserIterator, ParserSepIterator, Ranged, Repeat, Right, Sep, Sep1, SepExtend, SepExtend1, SepFold, SepFold1,
-        SepThen, SepWith, Value,
+        And, AndThen, Between, Bind, Case, Cut, GetString, GetStringExtend, Label, LabelWith, Left, Map, Or, OrNot,
+        Ranged, Right, Value,
     },
     error::{Builder, CustomBuilder, LazyError, Nil},
-    fold, fold1,
+    fold::{fold, fold1, Extend1Parser, ExtendParser, Fold, Fold1, SepExtend, SepExtend1, SepFold, SepFold1},
     input::{Input, IntoInput},
+    many::{
+        many, many1, repeat, Many, Many1, ManyThen, ManyWith, ParserIterator, ParserSepIterator, Repeat, Sep, Sep1,
+        SepThen, SepWith,
+    },
     prim::RefParser,
     Error,
 };

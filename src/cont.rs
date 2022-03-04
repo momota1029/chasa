@@ -1,9 +1,9 @@
 use std::{fmt::Display, iter::once};
 
 use crate::{
-    before, combi,
+    before,
     error::{Builder as Eb, CustomBuilder as Cb},
-    not_followed_by,
+    fold, not_followed_by,
     util::run_drop,
     ICont, IOk, IReturn, Input, Parser, ParserOnce,
 };
@@ -97,20 +97,20 @@ impl<'a, I: Input, C, S: Clone, M: Cb> ICont<'a, I, C, S, M> {
     pub fn sep_fold<O, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(
         self, o: O, p: P1, sep: P2, f: impl Fn(O, P1::Output) -> O,
     ) -> IReturn<'a, O, I, C, S, M> {
-        self.then(combi::SepFold { init: o, p, sep, succ: f })
+        self.then(fold::SepFold { init: o, p, sep, succ: f })
     }
 
     #[inline]
     pub fn sep_extend<O: Extend<P1::Output>, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(
         self, o: O, p: P1, sep: P2,
     ) -> IReturn<'a, O, I, C, S, M> {
-        self.then(combi::SepExtend { init: o, p, sep })
+        self.then(fold::SepExtend { init: o, p, sep })
     }
     #[inline]
     pub fn sep_extend1<O: Extend<P1::Output>, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(
         self, o: O, p: P1, sep: P2,
     ) -> IReturn<'a, O, I, C, S, M> {
-        self.then(combi::SepExtend1 { init: o, p, sep })
+        self.then(fold::SepExtend1 { init: o, p, sep })
     }
 }
 impl<'a, O, I: Input, C, S, M: Cb> IReturn<'a, O, I, C, S, M> {

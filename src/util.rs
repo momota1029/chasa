@@ -3,7 +3,7 @@ use std::fmt::Display;
 use crate::{
     error::{Builder as Eb, CustomBuilder as Cb},
     input::IntoChars,
-    ICont, IOk, IResult, Input, LazyError, ParserOnce,
+    prim, ICont, IOk, IResult, Input, LazyError, Parser, ParserOnce,
 };
 
 #[inline]
@@ -87,4 +87,16 @@ impl<Item: ranges::Domain> CharsOrRange<Item> for std::ops::RangeFull {
     fn to(self) -> Self::To {
         ranges::GenericRange::from(self)
     }
+}
+
+#[inline(always)]
+pub fn run<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>>(parser: P) -> impl Parser<I, C, S, M, Output = P::Output> {
+    prim::parser(move |k| k.then(parser.to_ref()))
+}
+
+#[inline(always)]
+pub fn run_mv<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>>(
+    parser: P,
+) -> impl ParserOnce<I, C, S, M, Output = P::Output> {
+    prim::parser_mv(move |k| k.then(parser))
 }

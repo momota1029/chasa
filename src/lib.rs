@@ -166,8 +166,12 @@ pub use traits::*;
 pub mod char;
 pub use crate::char::{newline, no_break, no_break_ws, no_break_ws1, space, ws, ws1};
 pub mod combi;
-pub use combi::{before, extend_with_str, fold, fold1, many, not_followed_by, pure_or, tail_rec};
+pub use combi::{before, extend_with_str, not_followed_by, pure_or};
 pub mod cont;
+pub mod many;
+pub use many::many;
+pub mod fold;
+pub use fold::{fold, fold1, tail_rec};
 pub mod error;
 pub use error::{message, message_with, unexpect, unexpect_with, Error, LazyError, Nil};
 pub mod input;
@@ -178,3 +182,4 @@ pub use prim::{
     satisfy, satisfy_map, set_config, set_state, state, str,
 };
 mod util;
+pub use util::{run, run_mv};

@@ -70,6 +70,14 @@ pub trait IntoChars {
     type Iterator: Iterator<Item = Self::Item>;
     fn into_chars(self) -> Self::Iterator;
 }
+impl<'a> IntoChars for &'a String {
+    type Item = char;
+    type Iterator = std::str::Chars<'a>;
+    #[inline]
+    fn into_chars(self) -> Self::Iterator {
+        self.chars()
+    }
+}
 impl<'a> IntoChars for &'a str {
     type Item = char;
     type Iterator = std::str::Chars<'a>;
@@ -101,6 +109,15 @@ impl<I: Input> IntoInput for I {
     type IntoI = Self;
     fn into_input(self) -> Self::IntoI {
         self
+    }
+}
+impl<'a> IntoInput for &'a String {
+    type Item = char;
+    type Error = Nil;
+    type Pos = usize;
+    type IntoI = FromIterator<std::str::Chars<'a>, usize>;
+    fn into_input(self) -> Self::IntoI {
+        usize::with_iter(self.chars())
     }
 }
 impl<'a> IntoInput for &'a str {
