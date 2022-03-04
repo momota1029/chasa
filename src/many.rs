@@ -540,7 +540,7 @@ pub struct Repeat<P, O> {
     _marker: PhantomData<fn() -> O>,
 }
 #[inline]
-pub fn repeat<P, N: RangeWithOrd<usize>, O>(parser: P, count: N) -> Repeat<P, O> {
+pub fn take<P, N: RangeWithOrd<usize>, O>(parser: P, count: N) -> Repeat<P, O> {
     let range = count.to_pair();
     let start = match range.start_bound() {
         Bound::Included(&start) => start,

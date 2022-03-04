@@ -1,8 +1,8 @@
 [package]
 name = "chasa"
-version = "0.1.5"
+version = "0.1.6"
 authors = ["Conashimi Momota <momota.ry2@gmail.com>"]
-description = "A parser combinator that can be chained after case separation"
+description = "A parser combinator with `many` taking iterator, conditional branching, and method chain."
 edition = "2021"
 license = "Apache-2.0"
 

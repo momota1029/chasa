@@ -7,7 +7,7 @@ use crate::{
     fold::{fold, fold1, Extend1Parser, ExtendParser, Fold, Fold1, SepExtend, SepExtend1, SepFold, SepFold1},
     input::{Input, IntoInput},
     many::{
-        many, many1, repeat, Many, Many1, ManyThen, ManyWith, ParserIterator, ParserSepIterator, Repeat, Sep, Sep1,
+        many, many1, take, Many, Many1, ManyThen, ManyWith, ParserIterator, ParserSepIterator, Repeat, Sep, Sep1,
         SepThen, SepWith,
     },
     prim::RefParser,
@@ -368,7 +368,7 @@ pub trait Parser<I: Input, C, S, M: CustomBuilder>: ParserOnce<I, C, S, M> {
     where
         Self: Sized,
     {
-        repeat(self, count)
+        take(self, count)
     }
 }
 
@@ -381,6 +381,14 @@ pub trait SimpleParser<I: Input, M: CustomBuilder>: ParserOnce<I, (), (), M> + S
         })
         .map(|(o, _)| o)
         .map_err(|e| e.map(|e| e.calc()))
+    }
+    fn test<In: IntoInput<IntoI = I>>(self, input: In) -> bool {
+        self.run_once(ICont {
+            ok: IOk { input: input.into_input(), state: (), err: None, cutted: false },
+            config: &(),
+            drop: &mut || {},
+        })
+        .is_ok()
     }
 }
 impl<I: Input, M: CustomBuilder, P: ParserOnce<I, (), (), M>> SimpleParser<I, M> for P {}
@@ -412,6 +420,14 @@ pub trait EasyParser<I: Input>: ParserOnce<I, (), (), Nil> + Sized {
         })
         .map(|(o, _)| o)
         .ok()
+    }
+    fn test_nil<In: IntoInput<IntoI = I>>(self, input: In) -> bool {
+        self.run_once(ICont {
+            ok: IOk { input: input.into_input(), state: (), err: None, cutted: false },
+            config: &(),
+            drop: &mut || {},
+        })
+        .is_ok()
     }
 }
 impl<I: Input, P: ParserOnce<I, (), (), Nil>> EasyParser<I> for P {}

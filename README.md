@@ -1,4 +1,7 @@
-A parser combinator with additional operations on procedures.
+# chasa
+[![Crates.io](https://img.shields.io/crates/v/chasa.svg)](https://crates.io/crates/chasa)
+[![Docs](https://docs.rs/chasa/badge.svg)](https://docs.rs/chasa)
+A parser combinator with `many` taking iterator, conditional branching, and method chain.
 
 A parser combinator is a mechanism that allows you to combine small syntactic elements to define a larger syntax, which can then be parse directly.
 
@@ -15,6 +18,12 @@ let prod = num.sep_fold1(char('*'), |a,_,b| a * b);
 let sum = prod.sep_fold1(char('+'), |a,_,b| a + b);
 // Can parse simple addition and multiplication expressions.
 assert_eq!(sum.parse_ok("1+2*3+4"), Some(11));
+```
+
+The base is Parsec, but with some Rust essence added. For example, not only do you get `Vec` with `many`, but you can also manipulate iterators.
+```rust
+let string = char('"').right(any.many_with(|iter| iter.take_while(|c| c != &'"').collect()));
+assert_eq!(string.parse_ok("\"Lorem ipsum\" dolor sit amet,"), Some("Lorem ipsum".to_string()))
 ```
 
 Like the relationship between `Fn` and `FnOnce`, we have `Parser` and `ParserOnce` and write a parser to manipulate the iterator.

@@ -46,7 +46,9 @@ pub fn run_satisfy<I: Input<Item = impl Display + 'static>, M: Cb, O>(
     }
 }
 
-/// Currently, Range cannot be copied, so one_of cannot be copied either. Countermeasure.
+/**
+Currently, Range cannot be copied, so one_of cannot be copied either. Countermeasure.
+*/
 pub trait CharsOrRange<Item> {
     type To;
     fn to(self) -> Self::To;
@@ -82,19 +84,7 @@ chars_as_range!(
     std::ops::RangeToInclusive<Item>
 );
 
-#[inline(always)]
-pub fn run<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>>(parser: P) -> impl Parser<I, C, S, M, Output = P::Output> {
-    prim::parser(move |k| k.then(parser.to_ref()))
-}
-
-#[inline(always)]
-pub fn run_mv<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>>(
-    parser: P,
-) -> impl ParserOnce<I, C, S, M, Output = P::Output> {
-    prim::parser_mv(move |k| k.then(parser))
-}
-
-/// Currently, Range cannot be copied, so [`repeat`][`crate::many::Repeat`] cannot be copied either. Countermeasure.
+/// Currently, Range cannot be copied, so [`Repeat`][`crate::many::Repeat`] cannot be copied either. Countermeasure.
 pub trait RangeWithOrd<T> {
     fn to_pair(self) -> (Bound<T>, Bound<T>);
 }
@@ -133,4 +123,16 @@ impl<T> RangeWithOrd<T> for std::ops::RangeFull {
     fn to_pair(self) -> (Bound<T>, Bound<T>) {
         (Bound::Unbounded, Bound::Unbounded)
     }
+}
+
+#[inline(always)]
+pub fn run<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>>(parser: P) -> impl Parser<I, C, S, M, Output = P::Output> {
+    prim::parser(move |k| k.then(parser.to_ref()))
+}
+
+#[inline(always)]
+pub fn run_mv<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>>(
+    parser: P,
+) -> impl ParserOnce<I, C, S, M, Output = P::Output> {
+    prim::parser_mv(move |k| k.then(parser))
 }
