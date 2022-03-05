@@ -138,7 +138,7 @@ fn run_left_sep<
 /// # Example
 /// ```
 /// use chasa::*;
-/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(message));
+/// let d = one_of("0123456789").and_then(|c:char| c.to_string().parse::<usize>().map_err(message));
 /// let d = d.to_ref();
 /// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).parse_ok("1,2,3,4,5"), Some(15));
 /// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).parse_ok(""), Some(0));

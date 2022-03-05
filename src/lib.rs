@@ -31,11 +31,9 @@ enum SExp {
     List(Vec<SExp>),
 }
 fn sexp_like<I: Input<Item = char>>() -> impl EasyParser<I, SExp> {
-    // The `parser` is to prevent recursion of existential types (removing it will crash the current compiler).
-    parser(|k| {
-        let term = satisfy(|c: &char| !char::is_space(c) && c != &'(' && c != &')').many1();
-        k.then(term.map(SExp::Term).or(sexp_like.sep(ws1).between(char('('), char(')')).map(SExp::List)))
-    })
+    // `run` prevents type recursion, but does not Box
+    let term = satisfy(|c: &char| !char::is_space(c) && c != &'(' && c != &')').many1();
+    term.map(SExp::Term).or(run(sexp_like).sep(ws1).between(char('('), char(')')).map(SExp::List))
 }
 assert_eq!(
     sexp_like.parse_easy("(defun fact (x) (if (zerop x) 1 (* x (fact (- x 1)))))"),
@@ -168,7 +166,7 @@ pub use traits::*;
 pub mod char;
 pub use crate::char::{newline, no_break, no_break_ws, no_break_ws1, space, ws, ws1};
 pub mod combi;
-pub use combi::{before, choice, extend_with_str, not_followed_by, pure_or};
+pub use combi::{before, chain, choice, extend_with_str, not_followed_by, pure_or, skip_chain, tuple};
 pub mod cont;
 pub mod many;
 pub use many::many;

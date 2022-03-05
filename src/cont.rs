@@ -77,7 +77,6 @@ impl<'a, I: Input, C, S: Clone, M: Cb> ICont<'a, I, C, S, M> {
     ) -> IReturn<'a, O1, I, C, S, M> {
         self.then(p.to_ref()).case(|o2, k| k.fold(f(o1, o2), p, f))
     }
-
     #[inline]
     pub fn extend<B: Extend<O>, O, P: Parser<I, O, C, S, M>>(self, o: B, p: P) -> IReturn<'a, B, I, C, S, M> {
         self.fold(o, p, |mut o, v| {
@@ -92,14 +91,12 @@ impl<'a, I: Input, C, S: Clone, M: Cb> ICont<'a, I, C, S, M> {
             o
         })
     }
-
     #[inline]
     pub fn sep_fold<O, O1, O2, P1: Parser<I, O1, C, S, M>, P2: Parser<I, O2, C, S, M>>(
         self, o: O, p: P1, sep: P2, f: impl Fn(O, O1) -> O,
     ) -> IReturn<'a, O, I, C, S, M> {
         self.then(fold::SepFold { init: o, p, sep, succ: f, _marker: PhantomData })
     }
-
     #[inline]
     pub fn sep_extend<B: Extend<O>, O, P1: Parser<I, O, C, S, M>, P2: Parser<I, O2, C, S, M>, O2>(
         self, o: B, p: P1, sep: P2,

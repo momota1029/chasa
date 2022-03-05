@@ -44,12 +44,10 @@ enum SExp {
     Term(String),
     List(Vec<SExp>),
 }
-fn sexp_like<I: Input<Item = char>>() -> impl EasyParser<I, Output = SExp> {
-    // The `parser` is to prevent recursion of existential types (removing it will crash the current compiler).
-    parser(|k| {
-        let term = satisfy(|c: &char| !char::is_space(c) && c != &'(' && c != &')').many1();
-        k.then(term.map(SExp::Term).or(sexp_like.sep(ws1).between(char('('), char(')')).map(SExp::List)))
-    })
+fn sexp_like<I: Input<Item = char>>() -> impl EasyParser<I, SExp> {
+    // `run` prevents type recursion, but does not Box
+    let term = satisfy(|c: &char| !char::is_space(c) && c != &'(' && c != &')').many1();
+    term.map(SExp::Term).or(run(sexp_like).sep(ws1).between(char('('), char(')')).map(SExp::List))
 }
 assert_eq!(
     sexp_like.parse_easy("(defun fact (x) (if (zerop x) 1 (* x (fact (- x 1)))))"),
@@ -92,7 +90,7 @@ enum JSON {
     Null,
 }
 
-fn json_parser<I: Input<Item = char>>() -> impl EasyParser<I, Output = JSON> {
+fn json_parser<I: Input<Item = char>>() -> impl EasyParser<I, JSON> {
     any.case(|c, k| match c {
         '{' => k
             .then(
@@ -115,11 +113,11 @@ fn json_parser<I: Input<Item = char>>() -> impl EasyParser<I, Output = JSON> {
     .between(whitespace, whitespace)
 }
 
-fn whitespace<I: Input<Item = char>>() -> impl EasyParser<I, Output = ()> {
+fn whitespace<I: Input<Item = char>>() -> impl EasyParser<I, ()> {
     one_of("\t\r\n ").skip_many()
 }
 
-fn string_char<I: Input<Item = char>>() -> impl EasyParser<I, Output = Option<char>> {
+fn string_char<I: Input<Item = char>>() -> impl EasyParser<I, Option<char>> {
     any.case(|c, k| match c {
         '\\' => k.then(any.case(|c, k| {
             match c {
@@ -149,7 +147,7 @@ fn string_char<I: Input<Item = char>>() -> impl EasyParser<I, Output = Option<ch
     })
 }
 
-fn num_parser<I: Input<Item = char>>(c: char) -> impl EasyParser<I, Output = f64> {
+fn num_parser<I: Input<Item = char>>(c: char) -> impl EasyParser<I, f64> {
     let digit = satisfy(|c| ('0'..='9').contains(c));
     extend_with_str(c.to_string(),
         parser_once(move |k| match c {

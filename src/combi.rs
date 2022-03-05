@@ -237,6 +237,199 @@ impl<I: Input, Output1, Output2, C, S, M: Cb, P1: Parser<I, Output1, C, S, M>, P
 }
 
 /**
+The parsers in the tuple are invoked in turn, and if all succeed, their contents are returned as a tuple.
+# Example
+```
+use chasa::*;
+let p = tuple((char('a'), char('b'), char('c')));
+assert_eq!(p.parse_ok("abc"), Some(('a','b','c')));
+assert_eq!(p.parse_ok("abd"), None);
+```
+*/
+#[derive(Clone, Copy)]
+pub struct Chain<PS>(PS);
+#[inline]
+pub fn tuple<PS>(parsers: PS) -> Chain<PS> {
+    Chain(parsers)
+}
+macro_rules! chain_derive {
+    () => {};
+    (($p:ident,$pt:ident,$o:ident,$ot:ident)) => {
+        impl<I: Input,$ot, C, S, M: Cb, $pt: ParserOnce<I, $ot, C, S, M>> ParserOnce<I, $ot, C, S, M> for Chain<($pt,)> {
+            #[inline]
+            fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<$ot, I, S, M> {
+                self.0.0.run_once(cont)
+            }
+        }
+        impl<I: Input,$ot, C, S, M: Cb, $pt: Parser<I, $ot, C, S, M>> Parser<I, $ot, C, S, M> for Chain<($pt,)> {
+            #[inline]
+            fn run(&self, cont: ICont<I, C, S, M>) -> IResult<$ot, I, S, M> {
+                self.0.0.run(cont)
+            }
+        }
+    };
+    (($p1:ident,$p1t:ident,$o1:ident,$o1t:ident),$(($ps:ident,$pst:ident,$os:ident,$ost:ident)),+) => {
+        impl<I:Input,$o1t,$($ost),+,C,S,M:Cb,$p1t:ParserOnce<I,$o1t,C,S,M>,$($pst:ParserOnce<I,$ost,C,S,M>),+> ParserOnce<I,($o1t,$($ost),+),C,S,M> for Chain<($p1t,$($pst),+)> {
+            #[inline] fn run_once(self, cont:ICont<I,C,S,M>) -> IResult<($o1t,$($ost),+),I,S,M> {
+                let ICont { ok, config, drop } = cont;
+                let ($p1,$($ps),+) = self.0;
+                let ($o1, ok) = $p1.run_once(ICont { ok, config, drop })?;
+                $(let ($os, ok) = $ps.run_once(ICont { ok, config, drop })?;)+
+                Ok((($o1,$($os),+), ok))
+            }
+        }
+        impl<I:Input,$o1t,$($ost),+,C,S,M:Cb,$p1t:Parser<I,$o1t,C,S,M>,$($pst:Parser<I,$ost,C,S,M>),+> Parser<I,($o1t,$($ost),+),C,S,M> for Chain<($p1t,$($pst),+)> {
+            #[inline] fn run(&self, cont:ICont<I,C,S,M>) -> IResult<($o1t,$($ost),+),I,S,M> {
+                let ICont { ok, config, drop } = cont;
+                let ($p1,$($ps),+) = &self.0;
+                let ($o1, ok) = $p1.run(ICont { ok, config, drop })?;
+                $(let ($os, ok) = $ps.run(ICont { ok, config, drop })?;)+
+                Ok((($o1,$($os),+), ok))
+            }
+        }
+        chain_derive!($(($ps,$pst,$os,$ost)),+);
+    }
+}
+chain_derive!(
+    (p1, P1, o1, O1),
+    (p2, P2, o2, O2),
+    (p3, P3, o3, O3),
+    (p4, P4, o4, O4),
+    (p5, P5, o5, O5),
+    (p6, P6, o6, O6),
+    (p7, P7, o7, O7),
+    (p8, P8, o8, O8),
+    (p9, P9, o9, O9),
+    (p10, P10, o10, O10),
+    (p11, P11, o11, O11),
+    (p12, P12, o12, O12),
+    (p13, P13, o13, O13),
+    (p14, P14, o14, O14),
+    (p15, P15, o15, O15),
+    (p16, P16, o16, O16),
+    (p17, P17, o17, O17),
+    (p18, P18, o18, O18),
+    (p19, P19, o19, O19),
+    (p20, P20, o20, O20),
+    (p21, P21, o21, O21),
+    (p22, P22, o22, O22),
+    (p23, P23, o23, O23),
+    (p24, P24, o24, O24),
+    (p25, P25, o25, O25),
+    (p26, P26, o26, O26),
+    (p27, P27, o27, O27),
+    (p28, P28, o28, O28),
+    (p29, P29, o29, O29),
+    (p30, P30, o30, O30)
+);
+
+/**
+ * The parsers in the tuple are invoked in turn and only the last result is returned if all succeed.
+# Example
+```
+use chasa::*;
+let p = chain((char('a'), char('b'), char('c')));
+assert_eq!(p.parse_ok("abc"), Some('c'));
+assert_eq!(p.parse_ok("abd"), None);
+```
+*/
+pub struct ChainRight<Ps, Os>(Ps, PhantomData<fn() -> Os>);
+#[inline]
+pub fn chain<Ps, Os>(parsers: Ps) -> ChainRight<Ps, Os> {
+    ChainRight(parsers, PhantomData)
+}
+#[inline]
+pub fn skip_chain<Ps, Os, O2>(parsers: Ps) -> Value<ChainRight<Ps, Os>, (), O2> {
+    Value(ChainRight(parsers, PhantomData), (), PhantomData)
+}
+impl<Ps: Clone, Os> Clone for ChainRight<Ps, Os> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), PhantomData)
+    }
+}
+impl<Ps: Copy, Os> Copy for ChainRight<Ps, Os> {}
+macro_rules! last {
+    ($id:ident) => ($id);
+    ($id:ident, $($ids:ident),+) => (last!($($ids),+));
+}
+macro_rules! chain_right_run {
+    ($run:ident,$ok:ident,$config:ident,$drop:ident,$p:ident) => {
+        return $p.$run(ICont { ok:$ok, config:$config, drop:$drop });
+    };
+    ($run:ident,$ok:ident,$config:ident,$drop:ident,$p1:ident,$($ps:ident),+) => {
+        let (_,$ok) = $p1.$run(ICont { ok:$ok, config:$config, drop:$drop })?;
+        chain_right_run!($run,$ok,$config,$drop,$($ps),+);
+    }
+}
+macro_rules! chain_right_derive {
+    () => {};
+    (($p:ident,$pt:ident,$ot:ident)) => {
+        impl<I: Input,$ot, C, S, M: Cb, $pt: ParserOnce<I, $ot, C, S, M>> ParserOnce<I, $ot, C, S, M> for ChainRight<($pt,),()> {
+            #[inline]
+            fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<$ot, I, S, M> {
+                self.0.0.run_once(cont)
+            }
+        }
+        impl<I: Input,$ot, C, S, M: Cb, $pt: Parser<I, $ot, C, S, M>> Parser<I, $ot, C, S, M> for ChainRight<($pt,),()> {
+            #[inline]
+            fn run(&self, cont: ICont<I, C, S, M>) -> IResult<$ot, I, S, M> {
+                self.0.0.run(cont)
+            }
+        }
+    };
+    (($p1:ident,$p1t:ident,$o1t:ident),$(($ps:ident,$pst:ident,$ost:ident)),+) => {
+        impl<I:Input,$o1t,$($ost),+,C,S,M:Cb,$p1t:ParserOnce<I,$o1t,C,S,M>,$($pst:ParserOnce<I,$ost,C,S,M>),+> ParserOnce<I,last!($($ost),+),C,S,M> for ChainRight<($p1t,$($pst),+),($o1t,$($ost),+)> {
+            #[inline] fn run_once(self, cont:ICont<I,C,S,M>) -> IResult<last!($($ost),+),I,S,M> {
+                let ICont { ok, config, drop } = cont;
+                let ($p1,$($ps),+) = self.0;
+                chain_right_run!(run_once,ok,config,drop,$p1,$($ps),+);
+            }
+        }
+        impl<I:Input,$o1t,$($ost),+,C,S,M:Cb,$p1t:Parser<I,$o1t,C,S,M>,$($pst:Parser<I,$ost,C,S,M>),+> Parser<I,last!($($ost),+),C,S,M> for ChainRight<($p1t,$($pst),+),($o1t,$($ost),+)> {
+            #[inline] fn run(&self, cont:ICont<I,C,S,M>) -> IResult<last!($($ost),+),I,S,M> {
+                let ICont { ok, config, drop } = cont;
+                let ($p1,$($ps),+) = &self.0;
+                chain_right_run!(run,ok,config,drop,$p1,$($ps),+);
+            }
+        }
+        chain_right_derive!($(($ps,$pst,$ost)),+);
+    }
+}
+chain_right_derive!(
+    (p1, P1, O1),
+    (p2, P2, O2),
+    (p3, P3, O3),
+    (p4, P4, O4),
+    (p5, P5, O5),
+    (p6, P6, O6),
+    (p7, P7, O7),
+    (p8, P8, O8),
+    (p9, P9, O9),
+    (p10, P10, O10),
+    (p11, P11, O11),
+    (p12, P12, O12),
+    (p13, P13, O13),
+    (p14, P14, O14),
+    (p15, P15, O15),
+    (p16, P16, O16),
+    (p17, P17, O17),
+    (p18, P18, O18),
+    (p19, P19, O19),
+    (p20, P20, O20),
+    (p21, P21, O21),
+    (p22, P22, O22),
+    (p23, P23, O23),
+    (p24, P24, O24),
+    (p25, P25, O25),
+    (p26, P26, O26),
+    (p27, P27, O27),
+    (p28, P28, O28),
+    (p29, P29, O29),
+    (p30, P30, O30)
+);
+
+/**
 Runs two parsers in succession, returning only the first value. If either of them fails, the whole thing will fail.
 # Example
 ```

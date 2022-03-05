@@ -10,6 +10,21 @@ pub trait Input: Clone {
     fn pos(&self) -> Self::Pos;
     fn next(&mut self) -> Option<Result<Self::Item, Self::Error>>;
 }
+impl Input for Nil {
+    type Item = Nil;
+    type Error = Nil;
+    type Pos = Nil;
+    fn index(&self) -> usize {
+        unreachable!()
+    }
+    fn pos(&self) -> Self::Pos {
+        unreachable!()
+    }
+    fn next(&mut self) -> Option<Result<Self::Item, Self::Error>> {
+        unreachable!()
+    }
+}
+
 pub trait Counter<T>: Clone {
     type Pos: Display + Debug + Copy + Ord;
     type Error: std::error::Error + 'static;
