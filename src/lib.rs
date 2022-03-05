@@ -134,13 +134,15 @@ fn num_parser<I: Input>(c: char) -> impl PatMv<I, f64> {
     let digit = one_of('0'..='9');
     extend_with_str(
         c.to_string(),
-        parser_mv(move |k| match c {
-            '0' => k.done(),
-            '1'..='9' => k.then(digit.skip_many()),
-            c => k.fail(unexpect(c)),
-        })
-        .left(char('.').right(digit.skip_many1()).or_not())
-        .left(one_of("eE").right(one_of("+-").or_not()).right(digit.skip_many1()).or_not()),
+        skip_chain((
+            parser_mv(move |k| match c {
+                '0' => k.done(),
+                '1'..='9' => k.then(digit.skip_many()),
+                c => k.fail(unexpect(c)),
+            }),
+            char('.').right(digit.skip_many1()).or_not(),
+            one_of("eE").right(one_of("+-").or_not()).right(digit.skip_many1()).or_not(),
+        )),
     )
     .and_then_mv(|(_, str)| str.parse::<f64>().map_err(message))
 }
