@@ -5,15 +5,16 @@ use std::{
 };
 
 use crate::{
-    error::{Builder as Eb, CustomBuilder as Cb},
+    error::{Builder as Eb, CustomBuilder as Cb, LazyError},
+    input::Input,
+    traits::{ICont, IOk, IResult, Parser, ParserOnce},
     util::{run_drop, RangeWithOrd},
-    ICont, IOk, IResult, Input, LazyError, Parser, ParserOnce,
 };
 
 /// Collects successive runs of the parser as if they were iterators. However, a failure that consumes input will cause the whole thing to fail.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// assert_eq!(any.many().parse_ok("1234"), Some(vec!['1','2','3','4']));
 /// assert_eq!(any.many().parse_ok("1234"), Some("1234".to_string()));
 /// assert_eq!(char('a').many().parse_ok("aaabaaba"), Some("aaa".to_string()));
@@ -56,7 +57,7 @@ impl<I: Input, O, C, S: Clone, M: Cb, B: FromIterator<O>, P: Parser<I, O, C, S, 
 /// Collects successive runs of the parser as if they were iterators. However, if more than one input is consumed and fails, or none of them succeeds, the whole thing will fail.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// assert_eq!(any.many1::<Vec<_>>().parse_ok("1234"), Some(vec!['1','2','3','4']));
 /// assert_eq!(any.many1::<String>().parse_ok("1234"), Some("1234".to_string()));
 /// assert_eq!(char('a').many1::<String>().parse_ok("aaabaaba"), Some("aaa".to_string()));
@@ -105,7 +106,7 @@ impl<I: Input, O, C, S: Clone, M: Cb, B: FromIterator<O>, P: Parser<I, O, C, S, 
 /// The required [`ParserIterator<P>`] argument to `F` is simply an iterator that returns `P::Output`.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// assert_eq!(
 ///     any.many_with(|iter| iter.enumerate().collect()).parse_ok("abcde"),
 ///     Some(vec![(0,'a'),(1,'b'),(2,'c'),(3,'d'),(4,'e')])
@@ -278,7 +279,7 @@ impl<'a, 'b, I: Input, O, C, S: Clone, M: Cb, P: Parser<I, O, C, S, M>> Iterator
 /// Arrange several parsers in a row and separate them with another parser. The result is a [`std::iter::Iterator::collect`].
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// let d = one_of('0'..='9').and_then(|c: char| c.to_string().parse::<isize>().map_err(message));
 /// let p = d.to_ref().sep(char(','));
 /// assert_eq!(p.parse_ok("1,2,3,4,5"), Some(vec![1,2,3,4,5]));
@@ -339,7 +340,7 @@ impl<
 /// Arrange several parsers in a row and separate them with another parser. The result is a [`std::iter::Iterator::collect`]. More than one success is requested.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// let d = one_of('0'..='9').and_then(|c: char| c.to_string().parse::<isize>().map_err(message));
 /// let p = d.to_ref().sep1(char(','));
 /// assert_eq!(p.parse_ok("1,2,3,4,5"), Some(vec![1,2,3,4,5]));
@@ -414,7 +415,7 @@ impl<
 /// See also [`ManyWith`] and [`Sep`]
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// let d = one_of('0'..='9').and_then(|c: char| c.to_string().parse::<isize>().map_err(message));
 /// let d = d.to_ref();
 /// assert_eq!(
@@ -638,7 +639,7 @@ impl<'a, 'b, I: Input, O1, O2, C, S: Clone, M: Cb, P1: Parser<I, O1, C, S, M>, P
 
 /// Repeat a specified number of times, either range or usize.
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// assert_eq!(char('a').repeat(2).parse_ok("aaa"), Some("aa".to_string()));
 /// assert_eq!(char('a').repeat(4).parse_ok("aaaaa"), Some("aaaa".to_string()));
 /// assert_eq!(char('a').repeat(1..=3).parse_ok("aaaaa"), Some("aaa".to_string()));

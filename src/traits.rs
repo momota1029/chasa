@@ -3,7 +3,7 @@ use crate::{
         And, AndThen, Between, Bind, Case, Cut, GetString, GetStringExtend, Label, LabelWith, Left, Map, Or, OrNot,
         Ranged, Right, Value,
     },
-    error::{Builder, CustomBuilder, LazyError, Nil},
+    error::{Builder, CustomBuilder, Error, LazyError, Nil},
     fold::{fold, fold1, Extend1Parser, ExtendParser, Fold, Fold1, SepExtend, SepExtend1, SepFold, SepFold1},
     input::{Input, IntoInput},
     many::{
@@ -12,7 +12,6 @@ use crate::{
     },
     prim::RefParser,
     util::RangeWithOrd,
-    Error,
 };
 use std::{fmt::Display, marker::PhantomData};
 
@@ -458,16 +457,10 @@ pub trait SimpleParser<I: Input, Output, M: CustomBuilder>: ParserOnce<I, Output
 }
 impl<I: Input, M: CustomBuilder, Output, P: ParserOnce<I, Output, (), (), M>> SimpleParser<I, Output, M> for P {}
 
-pub trait Pat<Item, Output>
-where
-    Self: ParserOnce<Nil, Output, Nil, Nil, Nil>,
-{
-    fn run_once<I: Input<Item = Item>, C, S, M: CustomBuilder>(
-        self, cont: ICont<I, C, S, M>,
-    ) -> IResult<Output, I, S, M>;
-}
 /// Trait to parse a &str easily.
-pub trait EasyParser<I: Input, Output>: ParserOnce<I, Output, (), (), Nil> + Sized {
+pub trait Pat<I: Input, Output>: Parser<I, Output, (), (), Nil> + Sized {}
+impl<I: Input, Output, P: Parser<I, Output, (), (), Nil>> Pat<I, Output> for P {}
+pub trait PatMv<I: Input, Output>: ParserOnce<I, Output, (), (), Nil> + Sized {
     /// Returns the result or error string, useful for testing.
     #[inline]
     fn parse_easy<In: IntoInput<IntoI = I>>(self, input: In) -> Result<Output, String>
@@ -506,4 +499,4 @@ pub trait EasyParser<I: Input, Output>: ParserOnce<I, Output, (), (), Nil> + Siz
         .is_ok()
     }
 }
-impl<I: Input, Output, P: ParserOnce<I, Output, (), (), Nil>> EasyParser<I, Output> for P {}
+impl<I: Input, Output, P: ParserOnce<I, Output, (), (), Nil>> PatMv<I, Output> for P {}

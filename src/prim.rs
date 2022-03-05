@@ -8,9 +8,9 @@ use either::Either;
 
 use crate::{
     error::{Builder as Eb, CustomBuilder as Cb},
-    input::IntoChars,
+    input::{Input, IntoChars},
+    traits::{ICont, IOk, IResult, IReturn, Parser, ParserOnce},
     util::{run_satisfy, CharsOrRange},
-    ICont, IOk, IResult, IReturn, Input, Parser, ParserOnce,
 };
 
 impl<I: Input, C, S, M: Cb, Output, P: ParserOnce<I, Output, C, S, M>, F: FnOnce() -> P> ParserOnce<I, Output, C, S, M>
@@ -31,10 +31,10 @@ impl<I: Input, C, S, M: Cb, Output, P: ParserOnce<I, Output, C, S, M>, F: Fn() -
 /// See also `tail_rec` and `case` if you feel compelled to use this.
 /// # Example
 /// ```
-/// use chasa::*;
-/// fn p<I:Input<Item=char>+Clone>() -> impl EasyParser<I,String> {
+/// use chasa::char::prelude::*;
+/// fn p<I:Input<Item=char>>() -> impl Pat<I,String> {
 ///     // Note the reverse order
-///     parser_mv(|k| k.then(any.and(p).map(|(x,mut xs)| {xs.push(x); xs}).or(pure(String::new()))))
+///     parser(|k| k.then(any.and(p).map(|(x,mut xs)| {xs.push(x); xs}).or(pure(String::new()))))
 /// }
 /// assert_eq!(p.parse_ok("abcd"), Some("dcba".to_string()));
 /// assert_eq!(p.parse_ok("stressed"), Some("desserts".to_string()));
@@ -78,7 +78,7 @@ impl<O, I: Input, C, S, M: Cb, F: Fn(ICont<I, C, S, M>) -> IReturn<O, I, C, S, M
 /// Makes a parser reference a parser. Use this to reuse the parser locally.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// let p = char('a').and(char('b'));
 /// let p = p.to_ref();
 /// assert_eq!(p.parse_ok("ab"), Some(('a','b')));
@@ -140,7 +140,7 @@ impl<O: Clone, I: Input, C, S, M: Cb> Parser<I, O, C, S, M> for Pure<O> {
 /// See also [`error::Builder`][`crate::error::Builder`]
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// assert_eq!(fail::<_,()>(unexpect("chasa")).parse_easy(""),Err("unexpected chasa at 0".to_string()));
 /// ```
 pub struct Fail<O, M: Cb>(Eb<M>, PhantomData<fn() -> O>);
@@ -157,7 +157,7 @@ impl<O, I: Input, C, S, M: Cb> ParserOnce<I, O, C, S, M> for Fail<O, M> {
 /// The parser that matches the end of the input.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// assert_eq!(eoi.parse_easy(""), Ok(()));
 /// assert_eq!(eoi.parse_easy("a2"), Err("unexpected a, expecting eoi at 0".to_string()))
 /// ```
@@ -195,7 +195,7 @@ impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb> Parser<I, (), C, S, M
 /// A parser that takes a single arbitrary character.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// assert_eq!(any.parse_ok("12"), Some('1'));
 /// assert_eq!(any.parse_ok(""), None)
 /// ```
@@ -240,7 +240,7 @@ impl<I: Input, C, S, M: Cb> Parser<I, I::Item, C, S, M> for Any<I, C, S, M> {
 /// If the given character matches the input character, it is accepted.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// assert_eq!(char('a').parse_easy("a2"), Ok('a'));
 /// assert_eq!(char('1').parse_easy("a2"), Err("unexpected a, expecting 1 at 0..1".to_string()))
 /// ```
@@ -282,7 +282,7 @@ impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::It
 ///
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// assert_eq!(one_of("abc").parse_ok("a2"), Some('a'));
 /// // You can also write like this
 /// assert_eq!(one_of('a'..='c').parse_ok("a2"), Some('a'));
@@ -372,7 +372,7 @@ where
 /// It takes one character from the input, compares it with the given iterator, and only accepts if none of the characters match.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// assert_eq!(none_of("abc").parse_ok("a2"), None);
 /// assert_eq!(none_of("def").parse_ok("a2"), Some('a'))
 /// ```
@@ -459,7 +459,7 @@ impl<I: Input<Item = impl PartialOrd<Item> + Display + 'static>, C, S, M: Cb, It
 /// If you want the whole string, use `.to([string])`(see [`Value`][`crate::combi::Value`]) or `.get_str()`(see [`GetString`][`crate::combi::GetString`]).
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// assert_eq!(str("a").parse_ok("a2"), Some(()));
 /// assert_eq!(str("a2").parse_ok("a2"), Some(()));
 /// assert_eq!(str("a23").parse_ok("a2"), None);

@@ -1,9 +1,11 @@
 use std::{fmt::Display, ops::Bound};
 
 use crate::{
-    error::{Builder as Eb, CustomBuilder as Cb},
+    error::{Builder as Eb, LazyError, CustomBuilder as Cb},
+    input::Input,
     input::IntoChars,
-    prim, ICont, IOk, IResult, Input, LazyError, Parser, ParserOnce,
+    prim,
+    traits::{ICont, IOk, IResult, Parser, ParserOnce},
 };
 
 #[inline]

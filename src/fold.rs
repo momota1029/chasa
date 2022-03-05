@@ -1,6 +1,11 @@
 use std::{iter::once, marker::PhantomData};
 
-use crate::{error::CustomBuilder as Cb, util::run_drop, ICont, IOk, IResult, Input, Parser, ParserOnce};
+use crate::{
+    error::CustomBuilder as Cb,
+    input::Input,
+    traits::{ICont, IOk, IResult, Parser, ParserOnce},
+    util::run_drop,
+};
 
 fn run_fold<O, I: Input, O2, C, S: Clone, M: Cb, P: Parser<I, O2, C, S, M>>(
     o: O, p: P, cont: ICont<I, C, S, M>, f: impl Fn(O, O2) -> O,
@@ -17,7 +22,7 @@ fn run_fold<O, I: Input, O2, C, S: Clone, M: Cb, P: Parser<I, O2, C, S, M>>(
 /// Run the parser greedily as many times as possible and fold the results.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(message));
 /// let d = d.to_ref();
 /// assert_eq!(d.fold(0,|a,b| a+b).parse_ok("12345"), Some(15));
@@ -56,7 +61,7 @@ impl<I: Input, O, C, S: Clone, M: Cb, T: Clone, P: Parser<I, O, C, S, M>, F: Fn(
 /// Run the parser greedily as many times as possible and fold the results. Require more than one success.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(message));
 /// let d = d.to_ref();
 /// assert_eq!(d.fold1(0,|a,b| a+b).parse_ok("12345"), Some(15));
@@ -137,7 +142,7 @@ fn run_left_sep<
 /// The parser will be separated by another parser (the result will be discarded) and folded.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// let d = one_of("0123456789").and_then(|c:char| c.to_string().parse::<usize>().map_err(message));
 /// let d = d.to_ref();
 /// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).parse_ok("1,2,3,4,5"), Some(15));
@@ -165,7 +170,10 @@ impl<T: Clone, P1: Clone, P2: Clone, F: Clone, O1, O2> Clone for SepFold<T, P1, 
     }
 }
 impl<T: Copy, P1: Copy, P2: Copy, F: Copy, O1, O2> Copy for SepFold<T, P1, P2, F, O1, O2> {}
-
+#[inline]
+pub fn sep_fold<T, P1, P2, F, O1, O2>(init: T, p: P1, sep: P2, succ: F) -> SepFold<T, P1, P2, F, O1, O2> {
+    SepFold { init, p, sep, succ, _marker: PhantomData }
+}
 impl<
         I: Input,
         O1,
@@ -262,7 +270,7 @@ fn run_left_sep1<
 /// It can be used for folding without discarding the separator.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<isize>().map_err(message));
 /// let p = d.sep_fold1(char(','),|a,_,b| a+b);
 /// assert_eq!(p.parse_ok("1,2,3,4,5"), Some(15));
@@ -287,6 +295,10 @@ impl<P1: Clone, P2: Clone, F: Clone, O2> Clone for SepFold1<P1, P2, F, O2> {
     }
 }
 impl<P1: Copy, P2: Copy, F: Copy, O2> Copy for SepFold1<P1, P2, F, O2> {}
+#[inline]
+pub fn sep_fold1<P1, P2, F, O2>(p: P1, sep: P2, succ: F) -> SepFold1<P1, P2, F, O2> {
+    SepFold1 { p, sep, succ, _marker: PhantomData }
+}
 impl<
         I: Input,
         O1,
@@ -346,7 +358,7 @@ fn run_extend<B: Extend<O>, I: Input, O, C, S: Clone, M: Cb, P: Parser<I, O, C, 
 /// Repeat extend with parser results.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// assert_eq!(any.extend(String::new()).parse_ok("abcde"), Some("abcde".to_string()));
 /// assert_eq!(char('a').extend(String::new()).parse_ok("aaabbb"), Some("aaa".to_string()));
 /// assert_eq!(char('a').extend(String::new()).parse_ok("b"), Some("".to_string()));
@@ -359,6 +371,10 @@ impl<B: Clone, P: Clone, O> Clone for ExtendParser<B, P, O> {
     }
 }
 impl<B: Copy, P: Copy, O> Copy for ExtendParser<B, P, O> {}
+#[inline]
+pub fn extend<B, P, O>(target: B, parser: P) -> ExtendParser<B, P, O> {
+    ExtendParser(target, parser, PhantomData)
+}
 impl<I: Input, O, C, S: Clone, M: Cb, P: Parser<I, O, C, S, M>, B: Extend<O>> ParserOnce<I, B, C, S, M>
     for ExtendParser<B, P, O>
 {
@@ -379,7 +395,7 @@ impl<I: Input, O, C, S: Clone, M: Cb, P: Parser<I, O, C, S, M>, B: Extend<O> + C
 /// Repeat extend with parser results. Require more than one success.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// assert_eq!(any.extend1(String::new()).parse_ok("abcde"), Some("abcde".to_string()));
 /// assert_eq!(char('a').extend1(String::new()).parse_ok("aaabbb"), Some("aaa".to_string()));
 /// assert_eq!(char('a').extend1(String::new()).parse_ok("b"), None);
@@ -392,6 +408,10 @@ impl<B: Clone, P: Clone, O> Clone for Extend1Parser<B, P, O> {
     }
 }
 impl<B: Copy, P: Copy, O> Copy for Extend1Parser<B, P, O> {}
+#[inline]
+pub fn extend1<B, P, O>(target: B, parser: P) -> Extend1Parser<B, P, O> {
+    Extend1Parser(target, parser, PhantomData)
+}
 impl<I: Input, O, C, S: Clone, M: Cb, P: Parser<I, O, C, S, M>, B: Extend<O>> ParserOnce<I, B, C, S, M>
     for Extend1Parser<B, P, O>
 {
@@ -469,6 +489,10 @@ impl<B: Clone, P1: Clone, P2: Clone, O1, O2> Clone for SepExtend<B, P1, P2, O1, 
         Self { init: self.init.clone(), p: self.p.clone(), sep: self.sep.clone(), _marker: PhantomData }
     }
 }
+#[inline]
+pub fn sep_extend<B, P1, P2, O1, O2>(init: B, p: P1, sep: P2) -> SepExtend<B, P1, P2, O1, O2> {
+    SepExtend { init, p, sep, _marker: PhantomData }
+}
 impl<B: Copy, P1: Copy, P2: Copy, O1, O2> Copy for SepExtend<B, P1, P2, O1, O2> {}
 impl<I: Input, O1, O2, C, S: Clone, M: Cb, P1: Parser<I, O1, C, S, M>, P2: Parser<I, O2, C, S, M>, B: Extend<O1>>
     ParserOnce<I, B, C, S, M> for SepExtend<B, P1, P2, O1, O2>
@@ -529,6 +553,10 @@ impl<B: Clone, P1: Clone, P2: Clone, O1, O2> Clone for SepExtend1<B, P1, P2, O1,
     }
 }
 impl<B: Copy, P1: Copy, P2: Copy, O1, O2> Copy for SepExtend1<B, P1, P2, O1, O2> {}
+#[inline]
+pub fn sep_extend1<B, P1, P2, O1, O2>(init: B, p: P1, sep: P2) -> SepExtend1<B, P1, P2, O1, O2> {
+    SepExtend1 { init, p, sep, _marker: PhantomData }
+}
 impl<I: Input, O1, O2, C, S: Clone, M: Cb, P1: Parser<I, O1, C, S, M>, P2: Parser<I, O2, C, S, M>, B: Extend<O1>>
     ParserOnce<I, B, C, S, M> for SepExtend1<B, P1, P2, O1, O2>
 {
@@ -567,7 +595,7 @@ impl<
 /// A recursive parser. It takes `T` and processes the continuation with `Err(T)` and the output with `Ok(U)`.
 /// # Example
 /// ```
-/// use chasa::*;
+/// use chasa::char::prelude::*;
 /// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(message));
 /// let d = d.to_ref();
 /// let p = char('(').right(tail_rec(0, move |n| d.map(move |m| Err(m+n)).or(char(')').to(Ok(n)))));

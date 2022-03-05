@@ -1,11 +1,12 @@
 use std::{fmt::Display, iter::once, marker::PhantomData};
 
 use crate::{
-    before,
+
     error::{Builder as Eb, CustomBuilder as Cb},
-    fold, not_followed_by,
+    fold, combi::{not_followed_by,before},
     util::run_drop,
-    ICont, IOk, IReturn, Input, Parser, ParserOnce,
+    traits::{ICont, IOk, IReturn, Parser, ParserOnce},
+    input::Input,
 };
 
 impl<'a, I: Input, C, S, M: Cb> ICont<'a, I, C, S, M> {
