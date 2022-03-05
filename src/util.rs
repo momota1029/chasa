@@ -5,7 +5,7 @@ use crate::{
     input::Input,
     input::IntoChars,
     prim,
-    traits::{ICont, IOk, IResult, Parser, ParserOnce},
+    parser::{ICont, IOk, IResult, Parser, ParserOnce},
 };
 
 #[inline]

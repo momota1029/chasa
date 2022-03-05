@@ -9,7 +9,7 @@ use either::Either;
 use crate::{
     error::{Builder as Eb, CustomBuilder as Cb},
     input::{Input, IntoChars},
-    traits::{ICont, IOk, IResult, IReturn, Parser, ParserOnce},
+    parser::{ICont, IOk, IResult, IReturn, Parser, ParserOnce},
     util::{run_satisfy, CharsOrRange},
 };
 

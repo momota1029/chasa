@@ -166,7 +166,7 @@ pub mod fold;
 pub mod input;
 pub mod many;
 pub mod prim;
-pub mod traits;
+pub mod parser;
 mod util;
 
 pub mod prelude {
@@ -186,6 +186,6 @@ pub mod prelude {
         satisfy, satisfy_map, set_config, set_state, state, str,
     };
     #[doc(inline)]
-    pub use crate::traits::{Parser, ParserOnce, Pat, PatMv, SimpleParser};
+    pub use crate::parser::{Parser, ParserOnce, Pat, PatMv, SimpleParser};
     pub use crate::util::{run, run_mv};
 }

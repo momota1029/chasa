@@ -7,7 +7,7 @@ use std::{
 use crate::{
     error::{Builder as Eb, CustomBuilder as Cb, LazyError},
     input::Input,
-    traits::{ICont, IOk, IResult, Parser, ParserOnce},
+    parser::{ICont, IOk, IResult, Parser, ParserOnce},
     util::{run_drop, RangeWithOrd},
 };
 

@@ -6,7 +6,7 @@ use crate::{
     error::{Builder as Eb, CustomBuilder as Cb},
     input::Input,
     prim::{pure, Pure},
-    traits::{ICont, IOk, IResult, IReturn, Parser, ParserOnce},
+    parser::{ICont, IOk, IResult, IReturn, Parser, ParserOnce},
     util::run_drop,
 };
 

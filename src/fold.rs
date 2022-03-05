@@ -3,7 +3,7 @@ use std::{iter::once, marker::PhantomData};
 use crate::{
     error::CustomBuilder as Cb,
     input::Input,
-    traits::{ICont, IOk, IResult, Parser, ParserOnce},
+    parser::{ICont, IOk, IResult, Parser, ParserOnce},
     util::run_drop,
 };
 

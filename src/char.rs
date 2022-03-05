@@ -5,7 +5,7 @@ use crate::{
     fold::tail_rec,
     input::Counter,
     prim::{char, no_state, satisfy, satisfy_map},
-    traits::{Parser, ParserOnce},
+    parser::{Parser, ParserOnce},
 };
 
 pub mod prelude {
@@ -21,7 +21,7 @@ pub mod prelude {
         any, char, config, eoi, fail, get_state, local_state, no_state, none_of, one_of, parser, parser_mv, pos, pure,
         satisfy, satisfy_map, set_config, set_state, state, str,
     };
-    pub use crate::traits::{Parser, ParserOnce, Pat, PatMv, SimpleParser};
+    pub use crate::parser::{Parser, ParserOnce, Pat, PatMv, SimpleParser};
     pub use crate::util::{run, run_mv};
 }
 

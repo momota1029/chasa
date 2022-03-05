@@ -5,7 +5,7 @@ use crate::{
     error::{Builder as Eb, CustomBuilder as Cb},
     fold, combi::{not_followed_by,before},
     util::run_drop,
-    traits::{ICont, IOk, IReturn, Parser, ParserOnce},
+    parser::{ICont, IOk, IReturn, Parser, ParserOnce},
     input::Input,
 };
 
