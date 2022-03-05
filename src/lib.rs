@@ -168,7 +168,7 @@ pub use traits::*;
 pub mod char;
 pub use crate::char::{newline, no_break, no_break_ws, no_break_ws1, space, ws, ws1};
 pub mod combi;
-pub use combi::{before, extend_with_str, not_followed_by, pure_or};
+pub use combi::{before, choice, extend_with_str, not_followed_by, pure_or};
 pub mod cont;
 pub mod many;
 pub use many::many;

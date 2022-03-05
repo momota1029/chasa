@@ -23,8 +23,13 @@ assert_eq!(sum.parse_ok("1+2*3+4"), Some(11));
 
 The base is Parsec, but with some Rust essence added. For example, not only do you get `Vec` with `many`, but you can also manipulate iterators.
 ```rust
-let string = char('"').right(any.many_with(|iter| iter.take_while(|c| c != &'"').collect()));
-assert_eq!(string.parse_ok("\"Lorem ipsum\" dolor sit amet,"), Some("Lorem ipsum".to_string()))
+let string = char('"').right(
+    any.many_with(|iter| iter.take_while(|c| c != &'"').collect())
+);
+assert_eq!(
+    string.parse_ok("\"Lorem ipsum\" dolor sit amet,"),
+    Some("Lorem ipsum".to_string())
+)
 ```
 
 Like the relationship between `Fn` and `FnOnce`, we have `Parser` and `ParserOnce` and write a parser to manipulate the iterator.

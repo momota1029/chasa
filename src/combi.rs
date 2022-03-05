@@ -435,6 +435,127 @@ impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M
     }
 }
 
+/**
+Try several parsers in sequence, which may result in fewer input,state clones than or's chain.
+# Example
+```
+use chasa::*;
+let p = choice((str("123").to(1), str("456").to(2), str("789").to(3)));
+assert_eq!(p.parse_ok("123"), Some(1));
+assert_eq!(p.parse_ok("456"), Some(2));
+```
+*/
+#[derive(Clone, Copy)]
+pub struct Choice<PS>(PS);
+#[inline]
+pub fn choice<PS>(parsers: PS) -> Choice<PS> {
+    Choice(parsers)
+}
+macro_rules! choice_derive {
+    () => ();
+    (($p:ident,$pt:ident)) => {
+        impl<I:Input,C,S:Clone,M:Cb,$pt:ParserOnce<I,C,S,M>> ParserOnce<I,C,S,M> for Choice<($pt,)> {
+            type Output = $pt::Output;
+            #[inline]
+            fn run_once(self, cont: ICont<I,C,S,M>) -> IResult<$pt::Output,I,S,M> {
+                self.0.0.run_once(cont)
+            }
+        }
+        impl<I:Input,C,S:Clone,M:Cb,$pt:Parser<I,C,S,M>> Parser<I,C,S,M> for Choice<($pt,)> {
+            #[inline]
+            fn run(&self, cont: ICont<I,C,S,M>) -> IResult<$pt::Output,I,S,M> {
+                self.0.0.run(cont)
+            }
+        }
+    };
+    (($p1:ident,$p1t:ident), $(($ps:ident, $pst:ident)),+) => {
+        impl<I:Input,C,S:Clone,M:Cb,$p1t:ParserOnce<I,C,S,M>,$($pst: ParserOnce<I,C,S,M,Output = $p1t::Output>),+> ParserOnce<I,C,S,M> for Choice<($p1t,$($pst),+)> {
+            type Output = $p1t::Output;
+            #[inline]
+            fn run_once(self, cont: ICont<I,C,S,M>) -> IResult<$p1t::Output,I,S,M> {
+                let ICont { mut ok, config, drop } = cont;
+                let Choice(($p1,$($ps),+)) = self;
+                if ok.cutted {
+                    drop()
+                }
+                choice_run_once!(ok,config,drop,$p1,$($ps),+);
+            }
+        }
+        impl<I:Input,C,S:Clone,M:Cb,$p1t:Parser<I,C,S,M>,$($pst: Parser<I,C,S,M,Output = $p1t::Output>),+> Parser<I,C,S,M> for Choice<($p1t,$($pst),+)> {
+            #[inline]
+            fn run(&self, cont: ICont<I,C,S,M>) -> IResult<$p1t::Output,I,S,M> {
+                let Choice(($p1,$($ps),+)) = &self;
+                let ICont { mut ok, config, drop } = cont;
+                if ok.cutted {
+                    drop()
+                }
+                choice_run!(ok,config,drop,$p1,$($ps),+);
+            }
+        }
+        choice_derive!($(($ps,$pst)),+);
+    };
+}
+macro_rules! choice_run_once {
+    ($ok:ident,$config:ident,$drop:ident,$p:ident) => {
+        return $p.run_once(ICont { ok:$ok, config:$config, drop:$drop });
+    };
+    ($ok:ident,$config:ident,$drop:ident,$p1:ident, $($pn:ident),+) => {
+        let (input, state, cutted) = ($ok.input.clone(), $ok.state.clone(), $ok.cutted);
+        match run_drop($p1, ICont { ok:$ok, config:$config, drop:$drop }, (input, state)) {
+            (Ok((o, ok)), _) => return Ok((o, ok)),
+            (Err(e), None) => return Err(e),
+            (Err(e), Some((input, state))) => $ok = IOk { input, state, err: Some(e), cutted },
+        }
+        choice_run_once!($ok,$config,$drop,$($pn),+);
+    };
+}
+macro_rules! choice_run {
+    ($ok:ident,$config:ident,$drop:ident,$p:ident) => {
+        return $p.run(ICont { ok:$ok, config:$config, drop:$drop });
+    };
+    ($ok:ident,$config:ident,$drop:ident,$p1:ident, $($pn:ident),+) => {
+        let (input, state, cutted) = ($ok.input.clone(), $ok.state.clone(), $ok.cutted);
+        match run_drop($p1.to_ref(), ICont { ok:$ok, config:$config, drop:$drop }, (input, state)) {
+            (Ok((o, ok)), _) => return Ok((o, ok)),
+            (Err(e), None) => return Err(e),
+            (Err(e), Some((input, state))) => $ok = IOk { input, state, err: Some(e), cutted },
+        }
+        choice_run!($ok,$config,$drop,$($pn),+);
+    };
+}
+choice_derive!(
+    (p1, P1),
+    (p2, P2),
+    (p3, P3),
+    (p4, P4),
+    (p5, P5),
+    (p6, P6),
+    (p7, P7),
+    (p8, P8),
+    (p9, P9),
+    (p10, P10),
+    (p11, P11),
+    (p12, P12),
+    (p13, P13),
+    (p14, P14),
+    (p15, P15),
+    (p16, P16),
+    (p17, P17),
+    (p18, P18),
+    (p19, P19),
+    (p20, P20),
+    (p21, P21),
+    (p22, P22),
+    (p23, P23),
+    (p24, P24),
+    (p25, P25),
+    (p26, P26),
+    (p27, P27),
+    (p28, P28),
+    (p29, P29),
+    (p30, P30)
+);
+
 /// It returns `Some` if the parser succeeds, returns `None` if the parser does not consume any input and fails, and fails if the parser consumes some input and fails.
 /// # Example
 /// ```
