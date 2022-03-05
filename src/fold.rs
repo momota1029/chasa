@@ -1,9 +1,9 @@
-use std::iter::once;
+use std::{iter::once, marker::PhantomData};
 
 use crate::{error::CustomBuilder as Cb, util::run_drop, ICont, IOk, IResult, Input, Parser, ParserOnce};
 
-fn run_fold<O, I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>>(
-    o: O, p: P, cont: ICont<I, C, S, M>, f: impl Fn(O, P::Output) -> O,
+fn run_fold<O, I: Input, O2, C, S: Clone, M: Cb, P: Parser<I, O2, C, S, M>>(
+    o: O, p: P, cont: ICont<I, C, S, M>, f: impl Fn(O, O2) -> O,
 ) -> IResult<O, I, S, M> {
     let ICont { ok, config, drop } = cont;
     let (input, state, cutted) = (ok.input.clone(), ok.state.clone(), ok.cutted);
@@ -24,23 +24,28 @@ fn run_fold<O, I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>>(
 /// assert_eq!(d.fold(0,|a,b| a+b).parse_ok(""), Some(0));
 /// assert_eq!(d.fold(0,|a,b| a+b).and(d).parse_ok("12345"), None);
 /// ```
-#[derive(Clone, Copy)]
-pub struct Fold<T, P, F>(T, P, F);
-#[inline]
-pub fn fold<T, P, F>(init: T, parser: P, succ: F) -> Fold<T, P, F> {
-    Fold(init, parser, succ)
+pub struct Fold<T, P, F, O>(T, P, F, PhantomData<fn() -> O>);
+impl<T: Clone, P: Clone, F: Clone, O> Clone for Fold<T, P, F, O> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone(), self.2.clone(), PhantomData)
+    }
 }
-impl<I: Input, C, S: Clone, M: Cb, T, P: Parser<I, C, S, M>, F: Fn(T, P::Output) -> T> ParserOnce<I, C, S, M>
-    for Fold<T, P, F>
+impl<T: Copy, P: Copy, F: Copy, O> Copy for Fold<T, P, F, O> {}
+#[inline]
+pub fn fold<T, P, F, O>(init: T, parser: P, succ: F) -> Fold<T, P, F, O> {
+    Fold(init, parser, succ, PhantomData)
+}
+impl<I: Input, O, C, S: Clone, M: Cb, T, P: Parser<I, O, C, S, M>, F: Fn(T, O) -> T> ParserOnce<I, T, C, S, M>
+    for Fold<T, P, F, O>
 {
-    type Output = T;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<T, I, S, M> {
         run_fold(self.0, self.1, cont, self.2)
     }
 }
-impl<I: Input, C, S: Clone, M: Cb, T: Clone, P: Parser<I, C, S, M>, F: Fn(T, P::Output) -> T> Parser<I, C, S, M>
-    for Fold<T, P, F>
+impl<I: Input, O, C, S: Clone, M: Cb, T: Clone, P: Parser<I, O, C, S, M>, F: Fn(T, O) -> T> Parser<I, T, C, S, M>
+    for Fold<T, P, F, O>
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<T, I, S, M> {
@@ -58,16 +63,21 @@ impl<I: Input, C, S: Clone, M: Cb, T: Clone, P: Parser<I, C, S, M>, F: Fn(T, P::
 /// assert_eq!(d.fold1(0,|a,b| a+b).parse_ok(""), None);
 /// assert_eq!(d.fold1(0,|a,b| a+b).and(d).parse_ok("12345"), None);
 /// ```
-#[derive(Clone, Copy)]
-pub struct Fold1<T, P, F>(T, P, F);
-#[inline]
-pub fn fold1<T, P, F>(init: T, parser: P, succ: F) -> Fold1<T, P, F> {
-    Fold1(init, parser, succ)
+pub struct Fold1<T, P, F, O>(T, P, F, PhantomData<fn() -> O>);
+impl<T: Clone, P: Clone, F: Clone, O> Clone for Fold1<T, P, F, O> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone(), self.2.clone(), PhantomData)
+    }
 }
-impl<I: Input, C, S: Clone, M: Cb, T, P: Parser<I, C, S, M>, F: Fn(T, P::Output) -> T> ParserOnce<I, C, S, M>
-    for Fold1<T, P, F>
+impl<T: Copy, P: Copy, F: Copy, O> Copy for Fold1<T, P, F, O> {}
+#[inline]
+pub fn fold1<T, P, F, O>(init: T, parser: P, succ: F) -> Fold1<T, P, F, O> {
+    Fold1(init, parser, succ, PhantomData)
+}
+impl<I: Input, O, C, S: Clone, M: Cb, T, P: Parser<I, O, C, S, M>, F: Fn(T, O) -> T> ParserOnce<I, T, C, S, M>
+    for Fold1<T, P, F, O>
 {
-    type Output = T;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<T, I, S, M> {
         let ICont { ok, config, drop } = cont;
@@ -76,8 +86,8 @@ impl<I: Input, C, S: Clone, M: Cb, T, P: Parser<I, C, S, M>, F: Fn(T, P::Output)
             .and_then(|(o, ok)| run_fold(self.2(self.0, o), self.1, ok.to_cont(config, drop), self.2))
     }
 }
-impl<I: Input, C, S: Clone, M: Cb, T: Clone, P: Parser<I, C, S, M>, F: Fn(T, P::Output) -> T> Parser<I, C, S, M>
-    for Fold1<T, P, F>
+impl<I: Input, O, C, S: Clone, M: Cb, T: Clone, P: Parser<I, O, C, S, M>, F: Fn(T, O) -> T> Parser<I, T, C, S, M>
+    for Fold1<T, P, F, O>
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<T, I, S, M> {
@@ -91,13 +101,15 @@ impl<I: Input, C, S: Clone, M: Cb, T: Clone, P: Parser<I, C, S, M>, F: Fn(T, P::
 // sepが成功した後に本体がempty failしても元に戻る仕組み
 fn run_left_sep<
     I: Input,
+    O1,
+    O2,
     C,
     S: Clone,
     M: Cb,
     T,
-    P1: Parser<I, C, S, M>,
-    P2: Parser<I, C, S, M>,
-    F: Fn(T, P1::Output) -> T,
+    P1: Parser<I, O1, C, S, M>,
+    P2: Parser<I, O2, C, S, M>,
+    F: Fn(T, O1) -> T,
 >(
     t: T, p: P1, sep: P2, succ: F, cont: ICont<I, C, S, M>,
 ) -> IResult<T, I, S, M> {
@@ -133,18 +145,40 @@ fn run_left_sep<
 /// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).and(char(',').right(d)).parse_ok("1,2,3,4,5,6"), None);
 /// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).and(char(',')).parse_ok("1,2,3,4,"), Some((10, ',')));
 /// ```
-#[derive(Clone, Copy)]
-pub struct SepFold<T, P1, P2, F> {
+pub struct SepFold<T, P1, P2, F, O1, O2> {
     pub(crate) init: T,
     pub(crate) p: P1,
     pub(crate) sep: P2,
     pub(crate) succ: F,
+    pub(crate) _marker: PhantomData<fn() -> (O1, O2)>,
 }
+impl<T: Clone, P1: Clone, P2: Clone, F: Clone, O1, O2> Clone for SepFold<T, P1, P2, F, O1, O2> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            init: self.init.clone(),
+            p: self.p.clone(),
+            sep: self.sep.clone(),
+            succ: self.succ.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+impl<T: Copy, P1: Copy, P2: Copy, F: Copy, O1, O2> Copy for SepFold<T, P1, P2, F, O1, O2> {}
 
-impl<I: Input, C, S: Clone, M: Cb, T, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, F: Fn(T, P1::Output) -> T>
-    ParserOnce<I, C, S, M> for SepFold<T, P1, P2, F>
+impl<
+        I: Input,
+        O1,
+        O2,
+        C,
+        S: Clone,
+        M: Cb,
+        T,
+        P1: Parser<I, O1, C, S, M>,
+        P2: Parser<I, O2, C, S, M>,
+        F: Fn(T, O1) -> T,
+    > ParserOnce<I, T, C, S, M> for SepFold<T, P1, P2, F, O1, O2>
 {
-    type Output = T;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<T, I, S, M> {
         let ICont { ok, config, drop } = cont;
@@ -160,14 +194,16 @@ impl<I: Input, C, S: Clone, M: Cb, T, P1: Parser<I, C, S, M>, P2: Parser<I, C, S
 }
 impl<
         I: Input,
+        O1,
+        O2,
         C,
         S: Clone,
         M: Cb,
         T: Clone,
-        P1: Parser<I, C, S, M>,
-        P2: Parser<I, C, S, M>,
-        F: Fn(T, P1::Output) -> T,
-    > Parser<I, C, S, M> for SepFold<T, P1, P2, F>
+        P1: Parser<I, O1, C, S, M>,
+        P2: Parser<I, O2, C, S, M>,
+        F: Fn(T, O1) -> T,
+    > Parser<I, T, C, S, M> for SepFold<T, P1, P2, F, O1, O2>
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<T, I, S, M> {
@@ -190,15 +226,17 @@ impl<
 // sepが成功した後に本体がempty failしても元に戻る仕組み
 fn run_left_sep1<
     I: Input,
+    O1,
+    O2,
     C,
     S: Clone,
     M: Cb,
-    P1: Parser<I, C, S, M>,
-    P2: Parser<I, C, S, M>,
-    F: Fn(P1::Output, P2::Output, P1::Output) -> P1::Output,
+    P1: Parser<I, O1, C, S, M>,
+    P2: Parser<I, O2, C, S, M>,
+    F: Fn(O1, O2, O1) -> O1,
 >(
-    t: P1::Output, p: P1, sep: P2, succ: F, cont: ICont<I, C, S, M>,
-) -> IResult<P1::Output, I, S, M> {
+    t: O1, p: P1, sep: P2, succ: F, cont: ICont<I, C, S, M>,
+) -> IResult<O1, I, S, M> {
     let ICont { ok, config, drop } = cont;
     let (input, state, cutted) = (ok.input.clone(), ok.state.clone(), ok.cutted);
     if cutted {
@@ -236,25 +274,33 @@ fn run_left_sep1<
 /// let p = d.sep_fold1(op, |a,sign,b| a + sign*b);
 /// assert_eq!(p.parse_ok("1+2+3-4+5"), Some(7));
 /// ```
-#[derive(Clone, Copy)]
-pub struct SepFold1<P1, P2, F> {
+pub struct SepFold1<P1, P2, F, O2> {
     pub(crate) p: P1,
     pub(crate) sep: P2,
     pub(crate) succ: F,
+    pub(crate) _marker: PhantomData<fn() -> O2>,
 }
+impl<P1: Clone, P2: Clone, F: Clone, O2> Clone for SepFold1<P1, P2, F, O2> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self { p: self.p.clone(), sep: self.sep.clone(), succ: self.succ.clone(), _marker: PhantomData }
+    }
+}
+impl<P1: Copy, P2: Copy, F: Copy, O2> Copy for SepFold1<P1, P2, F, O2> {}
 impl<
         I: Input,
+        O1,
+        O2,
         C,
         S: Clone,
         M: Cb,
-        P1: Parser<I, C, S, M>,
-        P2: Parser<I, C, S, M>,
-        F: Fn(P1::Output, P2::Output, P1::Output) -> P1::Output,
-    > ParserOnce<I, C, S, M> for SepFold1<P1, P2, F>
+        P1: Parser<I, O1, C, S, M>,
+        P2: Parser<I, O2, C, S, M>,
+        F: Fn(O1, O2, O1) -> O1,
+    > ParserOnce<I, O1, C, S, M> for SepFold1<P1, P2, F, O2>
 {
-    type Output = P1::Output;
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<P1::Output, I, S, M> {
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O1, I, S, M> {
         let ICont { ok, config, drop } = cont;
         self.p
             .run(ICont { ok, config, drop })
@@ -263,16 +309,18 @@ impl<
 }
 impl<
         I: Input,
+        O1,
+        O2,
         C,
         S: Clone,
         M: Cb,
-        P1: Parser<I, C, S, M>,
-        P2: Parser<I, C, S, M>,
-        F: Fn(P1::Output, P2::Output, P1::Output) -> P1::Output,
-    > Parser<I, C, S, M> for SepFold1<P1, P2, F>
+        P1: Parser<I, O1, C, S, M>,
+        P2: Parser<I, O2, C, S, M>,
+        F: Fn(O1, O2, O1) -> O1,
+    > Parser<I, O1, C, S, M> for SepFold1<P1, P2, F, O2>
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<P1::Output, I, S, M> {
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O1, I, S, M> {
         let ICont { ok, config, drop } = cont;
         self.p.run(ICont { ok, config, drop }).and_then(|(o, ok)| {
             run_left_sep1(o, self.p.to_ref(), self.sep.to_ref(), &self.succ, ok.to_cont(config, drop))
@@ -280,9 +328,9 @@ impl<
     }
 }
 
-fn run_extend<O: Extend<P::Output>, I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>>(
-    mut o: O, p: P, cont: ICont<I, C, S, M>,
-) -> IResult<O, I, S, M> {
+fn run_extend<B: Extend<O>, I: Input, O, C, S: Clone, M: Cb, P: Parser<I, O, C, S, M>>(
+    mut o: B, p: P, cont: ICont<I, C, S, M>,
+) -> IResult<B, I, S, M> {
     let ICont { ok, config, drop } = cont;
     let (input, state, cutted) = (ok.input.clone(), ok.state.clone(), ok.cutted);
     match run_drop(p.to_ref(), ICont { ok, config, drop }, (input, state)) {
@@ -303,22 +351,27 @@ fn run_extend<O: Extend<P::Output>, I: Input, C, S: Clone, M: Cb, P: Parser<I, C
 /// assert_eq!(char('a').extend(String::new()).parse_ok("aaabbb"), Some("aaa".to_string()));
 /// assert_eq!(char('a').extend(String::new()).parse_ok("b"), Some("".to_string()));
 /// ```
-#[derive(Clone, Copy)]
-pub struct ExtendParser<O, P>(pub(crate) O, pub(crate) P);
-impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output>> ParserOnce<I, C, S, M>
-    for ExtendParser<O, P>
-{
-    type Output = O;
+pub struct ExtendParser<B, P, O>(pub(crate) B, pub(crate) P, pub(crate) PhantomData<fn() -> O>);
+impl<B: Clone, P: Clone, O> Clone for ExtendParser<B, P, O> {
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone(), PhantomData)
+    }
+}
+impl<B: Copy, P: Copy, O> Copy for ExtendParser<B, P, O> {}
+impl<I: Input, O, C, S: Clone, M: Cb, P: Parser<I, O, C, S, M>, B: Extend<O>> ParserOnce<I, B, C, S, M>
+    for ExtendParser<B, P, O>
+{
+    #[inline]
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<B, I, S, M> {
         run_extend(self.0, self.1, cont)
     }
 }
-impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output> + Clone> Parser<I, C, S, M>
-    for ExtendParser<O, P>
+impl<I: Input, O, C, S: Clone, M: Cb, P: Parser<I, O, C, S, M>, B: Extend<O> + Clone> Parser<I, B, C, S, M>
+    for ExtendParser<B, P, O>
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<B, I, S, M> {
         run_extend(self.0.clone(), self.1.to_ref(), cont)
     }
 }
@@ -331,14 +384,19 @@ impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output> +
 /// assert_eq!(char('a').extend1(String::new()).parse_ok("aaabbb"), Some("aaa".to_string()));
 /// assert_eq!(char('a').extend1(String::new()).parse_ok("b"), None);
 /// ```
-#[derive(Clone, Copy)]
-pub struct Extend1Parser<O, P>(pub(crate) O, pub(crate) P);
-impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output>> ParserOnce<I, C, S, M>
-    for Extend1Parser<O, P>
-{
-    type Output = O;
+pub struct Extend1Parser<B, P, O>(pub(crate) B, pub(crate) P, pub(crate) PhantomData<fn() -> O>);
+impl<B: Clone, P: Clone, O> Clone for Extend1Parser<B, P, O> {
     #[inline]
-    fn run_once(mut self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone(), PhantomData)
+    }
+}
+impl<B: Copy, P: Copy, O> Copy for Extend1Parser<B, P, O> {}
+impl<I: Input, O, C, S: Clone, M: Cb, P: Parser<I, O, C, S, M>, B: Extend<O>> ParserOnce<I, B, C, S, M>
+    for Extend1Parser<B, P, O>
+{
+    #[inline]
+    fn run_once(mut self, cont: ICont<I, C, S, M>) -> IResult<B, I, S, M> {
         let ICont { ok, config, drop } = cont;
         self.1.run(ICont { ok, config, drop }).and_then(|(o, ok)| {
             self.0.extend(once(o));
@@ -346,11 +404,11 @@ impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output>> 
         })
     }
 }
-impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output> + Clone> Parser<I, C, S, M>
-    for Extend1Parser<O, P>
+impl<I: Input, O, C, S: Clone, M: Cb, P: Parser<I, O, C, S, M>, B: Extend<O> + Clone> Parser<I, B, C, S, M>
+    for Extend1Parser<B, P, O>
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<B, I, S, M> {
         let ICont { ok, config, drop } = cont;
         self.1.run(ICont { ok, config, drop }).and_then(|(o, ok)| {
             let mut init = self.0.clone();
@@ -363,12 +421,14 @@ impl<I: Input, C, S: Clone, M: Cb, P: Parser<I, C, S, M>, O: Extend<P::Output> +
 // sepが成功した後に本体がempty failしても元に戻る仕組み
 fn run_left_sep_extend<
     I: Input,
+    O1,
+    O2,
     C,
     S: Clone,
     M: Cb,
-    T: Extend<P1::Output>,
-    P1: Parser<I, C, S, M>,
-    P2: Parser<I, C, S, M>,
+    T: Extend<O1>,
+    P1: Parser<I, O1, C, S, M>,
+    P2: Parser<I, O2, C, S, M>,
 >(
     mut t: T, p: P1, sep: P2, cont: ICont<I, C, S, M>,
 ) -> IResult<T, I, S, M> {
@@ -397,18 +457,24 @@ fn run_left_sep_extend<
 }
 
 /// Repeat the parser, separating it with other parsers, and extend it.
-#[derive(Clone, Copy)]
-pub struct SepExtend<O, P1, P2> {
-    pub(crate) init: O,
+pub struct SepExtend<B, P1, P2, O1, O2> {
+    pub(crate) init: B,
     pub(crate) p: P1,
     pub(crate) sep: P2,
+    pub(crate) _marker: PhantomData<fn() -> (O1, O2)>,
 }
-impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, O: Extend<P1::Output>>
-    ParserOnce<I, C, S, M> for SepExtend<O, P1, P2>
-{
-    type Output = O;
+impl<B: Clone, P1: Clone, P2: Clone, O1, O2> Clone for SepExtend<B, P1, P2, O1, O2> {
     #[inline]
-    fn run_once(mut self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+    fn clone(&self) -> Self {
+        Self { init: self.init.clone(), p: self.p.clone(), sep: self.sep.clone(), _marker: PhantomData }
+    }
+}
+impl<B: Copy, P1: Copy, P2: Copy, O1, O2> Copy for SepExtend<B, P1, P2, O1, O2> {}
+impl<I: Input, O1, O2, C, S: Clone, M: Cb, P1: Parser<I, O1, C, S, M>, P2: Parser<I, O2, C, S, M>, B: Extend<O1>>
+    ParserOnce<I, B, C, S, M> for SepExtend<B, P1, P2, O1, O2>
+{
+    #[inline]
+    fn run_once(mut self, cont: ICont<I, C, S, M>) -> IResult<B, I, S, M> {
         let ICont { ok, config, drop } = cont;
         let (input, state, cutted) = (ok.input.clone(), ok.state.clone(), ok.cutted);
         match run_drop(self.p.to_ref(), ICont { ok, config, drop }, (input, state)) {
@@ -421,11 +487,20 @@ impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M
         }
     }
 }
-impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, O: Extend<P1::Output> + Clone>
-    Parser<I, C, S, M> for SepExtend<O, P1, P2>
+impl<
+        I: Input,
+        O1,
+        O2,
+        C,
+        S: Clone,
+        M: Cb,
+        P1: Parser<I, O1, C, S, M>,
+        P2: Parser<I, O2, C, S, M>,
+        B: Extend<O1> + Clone,
+    > Parser<I, B, C, S, M> for SepExtend<B, P1, P2, O1, O2>
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<B, I, S, M> {
         let ICont { ok, config, drop } = cont;
         let (input, state, cutted) = (ok.input.clone(), ok.state.clone(), ok.cutted);
         match run_drop(self.p.to_ref(), ICont { ok, config, drop }, (input, state)) {
@@ -441,18 +516,24 @@ impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M
 }
 
 /// Repeat the parser, separating it with other parsers, and extend it. Require more than one success.
-#[derive(Clone, Copy)]
-pub struct SepExtend1<O, P1, P2> {
-    pub(crate) init: O,
+pub struct SepExtend1<B, P1, P2, O1, O2> {
+    pub(crate) init: B,
     pub(crate) p: P1,
     pub(crate) sep: P2,
+    pub(crate) _marker: PhantomData<fn() -> (O1, O2)>,
 }
-impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, O: Extend<P1::Output>>
-    ParserOnce<I, C, S, M> for SepExtend1<O, P1, P2>
-{
-    type Output = O;
+impl<B: Clone, P1: Clone, P2: Clone, O1, O2> Clone for SepExtend1<B, P1, P2, O1, O2> {
     #[inline]
-    fn run_once(mut self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+    fn clone(&self) -> Self {
+        Self { init: self.init.clone(), p: self.p.clone(), sep: self.sep.clone(), _marker: PhantomData }
+    }
+}
+impl<B: Copy, P1: Copy, P2: Copy, O1, O2> Copy for SepExtend1<B, P1, P2, O1, O2> {}
+impl<I: Input, O1, O2, C, S: Clone, M: Cb, P1: Parser<I, O1, C, S, M>, P2: Parser<I, O2, C, S, M>, B: Extend<O1>>
+    ParserOnce<I, B, C, S, M> for SepExtend1<B, P1, P2, O1, O2>
+{
+    #[inline]
+    fn run_once(mut self, cont: ICont<I, C, S, M>) -> IResult<B, I, S, M> {
         let ICont { ok, config, drop } = cont;
         self.p.run(ICont { ok, config, drop }).and_then(|(o, ok)| {
             self.init.extend(once(o));
@@ -460,11 +541,20 @@ impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M
         })
     }
 }
-impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>, O: Extend<P1::Output> + Clone>
-    Parser<I, C, S, M> for SepExtend1<O, P1, P2>
+impl<
+        I: Input,
+        O1,
+        O2,
+        C,
+        S: Clone,
+        M: Cb,
+        P1: Parser<I, O1, C, S, M>,
+        P2: Parser<I, O2, C, S, M>,
+        B: Extend<O1> + Clone,
+    > Parser<I, B, C, S, M> for SepExtend1<B, P1, P2, O1, O2>
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<B, I, S, M> {
         let ICont { ok, config, drop } = cont;
         self.p.run(ICont { ok, config, drop }).and_then(|(o, ok)| {
             let mut init = self.init.clone();
@@ -489,29 +579,28 @@ impl<I: Input, C, S: Clone, M: Cb, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M
 #[derive(Clone, Copy)]
 pub struct TailRec<O, F>(pub(crate) O, pub(crate) F);
 #[inline]
-pub fn tail_rec<I: Input, C, S, M: Cb, O1, O2, P: ParserOnce<I, C, S, M, Output = Result<O2, O1>>, F: Fn(O1) -> P>(
+pub fn tail_rec<I: Input, C, S, M: Cb, O1, O2, P: ParserOnce<I, Result<O2, O1>, C, S, M>, F: Fn(O1) -> P>(
     init: O1, f: F,
 ) -> TailRec<O1, F> {
     TailRec(init, f)
 }
-impl<I: Input, C, S, M: Cb, O1, O2, P: ParserOnce<I, C, S, M, Output = Result<O2, O1>>, F: Fn(O1) -> P>
-    ParserOnce<I, C, S, M> for TailRec<O1, F>
+impl<I: Input, C, S, M: Cb, O1, O2, P: ParserOnce<I, Result<O2, O1>, C, S, M>, F: Fn(O1) -> P>
+    ParserOnce<I, O2, C, S, M> for TailRec<O1, F>
 {
-    type Output = O2;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O2, I, S, M> {
         run_tail_rec(self.0, self.1, cont)
     }
 }
-impl<I: Input, C, S, M: Cb, O1: Clone, O2, P: ParserOnce<I, C, S, M, Output = Result<O2, O1>>, F: Fn(O1) -> P>
-    Parser<I, C, S, M> for TailRec<O1, F>
+impl<I: Input, C, S, M: Cb, O1: Clone, O2, P: ParserOnce<I, Result<O2, O1>, C, S, M>, F: Fn(O1) -> P>
+    Parser<I, O2, C, S, M> for TailRec<O1, F>
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O2, I, S, M> {
         run_tail_rec(self.0.clone(), &self.1, cont)
     }
 }
-fn run_tail_rec<I: Input, C, S, M: Cb, O1, O2, P: ParserOnce<I, C, S, M, Output = Result<O2, O1>>, F: Fn(O1) -> P>(
+fn run_tail_rec<I: Input, C, S, M: Cb, O1, O2, P: ParserOnce<I, Result<O2, O1>, C, S, M>, F: Fn(O1) -> P>(
     o: O1, f: F, cont: ICont<I, C, S, M>,
 ) -> IResult<O2, I, S, M> {
     let ICont { ok, config, drop } = cont;

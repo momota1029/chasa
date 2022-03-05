@@ -7,9 +7,9 @@ use crate::{
 };
 
 #[inline]
-pub(crate) fn run_drop<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, T>(
+pub(crate) fn run_drop<I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>, T>(
     p: P, cont: ICont<I, C, S, M>, dropped: T,
-) -> (IResult<P::Output, I, S, M>, Option<T>) {
+) -> (IResult<Output, I, S, M>, Option<T>) {
     let ICont { ok, config, drop } = cont;
     let mut dropped = Some(dropped);
     let res = p.run_once(ICont {
@@ -126,13 +126,13 @@ impl<T> RangeWithOrd<T> for std::ops::RangeFull {
 }
 
 #[inline(always)]
-pub fn run<I: Input, C, S, M: Cb, P: Parser<I, C, S, M>>(parser: P) -> impl Parser<I, C, S, M, Output = P::Output> {
+pub fn run<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>>(parser: P) -> impl Parser<I, Output, C, S, M> {
     prim::parser(move |k| k.then(parser.to_ref()))
 }
 
 #[inline(always)]
-pub fn run_mv<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>>(
+pub fn run_mv<I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>>(
     parser: P,
-) -> impl ParserOnce<I, C, S, M, Output = P::Output> {
+) -> impl ParserOnce<I, Output, C, S, M> {
     prim::parser_mv(move |k| k.then(parser))
 }

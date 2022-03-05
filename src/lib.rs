@@ -30,7 +30,7 @@ enum SExp {
     Term(String),
     List(Vec<SExp>),
 }
-fn sexp_like<I: Input<Item = char>>() -> impl EasyParser<I, Output = SExp> {
+fn sexp_like<I: Input<Item = char>>() -> impl EasyParser<I, SExp> {
     // The `parser` is to prevent recursion of existential types (removing it will crash the current compiler).
     parser(|k| {
         let term = satisfy(|c: &char| !char::is_space(c) && c != &'(' && c != &')').many1();
@@ -78,12 +78,12 @@ enum JSON {
     Null,
 }
 
-fn json_parser<I: Input<Item = char>>() -> impl EasyParser<I, Output = JSON> {
+fn json_parser<I: Input<Item = char>>() -> impl EasyParser<I, JSON> {
     any.case(|c, k| match c {
         '{' => k
             .then(
                 char('"')
-                    .right(string_char.many_with(|iter| iter.map_while(|x| x).collect()))
+                    .right(string_char.many_with(|iter| iter.map_while(|x| x).collect::<String>()))
                     .between(whitespace, whitespace)
                     .bind(|key| char(':').right(json_parser).map_mv(move |value| (key, value)))
                     .sep(char(',')),
@@ -101,11 +101,11 @@ fn json_parser<I: Input<Item = char>>() -> impl EasyParser<I, Output = JSON> {
     .between(whitespace, whitespace)
 }
 
-fn whitespace<I: Input<Item = char>>() -> impl EasyParser<I, Output = ()> {
+fn whitespace<I: Input<Item = char>>() -> impl EasyParser<I, ()> {
     one_of("\t\r\n ").skip_many()
 }
 
-fn string_char<I: Input<Item = char>>() -> impl EasyParser<I, Output = Option<char>> {
+fn string_char<I: Input<Item = char>>() -> impl EasyParser<I, Option<char>> {
     any.case(|c, k| match c {
         '\\' => k.then(any.case(|c, k| {
             match c {
@@ -135,7 +135,7 @@ fn string_char<I: Input<Item = char>>() -> impl EasyParser<I, Output = Option<ch
     })
 }
 
-fn num_parser<I: Input<Item = char>>(c: char) -> impl EasyParser<I, Output = f64> {
+fn num_parser<I: Input<Item = char>>(c: char) -> impl EasyParser<I, f64> {
     let digit = one_of('0'..='9');
     extend_with_str(c.to_string(),
         parser_mv(move |k| match c {

@@ -10,22 +10,22 @@ use crate::{
 
 /// Accepts one uppercase and one lowercase Latin letter.
 #[inline]
-pub fn latin<I: Input<Item = char>, C, S, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = char> {
+pub fn latin<I: Input<Item = char>, C, S, M: Cb>() -> impl ParserOnce<I, char, C, S, M> {
     satisfy(|c: &char| matches!(c, 'a'..='z' | 'A'..='Z'))
 }
 /// One Indian Arabic numeral is accepted.
 #[inline]
-pub fn num<I: Input<Item = char>, C, S, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = char> {
+pub fn num<I: Input<Item = char>, C, S, M: Cb>() -> impl ParserOnce<I, char, C, S, M> {
     satisfy(|c: &char| matches!(c, '0'..='9'))
 }
 /// Accept upper and lower case Latin letters or one of the Indo-Arabic numerals.
 #[inline]
-pub fn latin_num<I: Input<Item = char>, C, S, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = char> {
+pub fn latin_num<I: Input<Item = char>, C, S, M: Cb>() -> impl ParserOnce<I, char, C, S, M> {
     satisfy(|c: &char| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9'))
 }
 /// Accepts a single ASCII character.
 #[inline]
-pub fn ascii<I: Input<Item = char>, C, S, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = char> {
+pub fn ascii<I: Input<Item = char>, C, S, M: Cb>() -> impl ParserOnce<I, char, C, S, M> {
     satisfy(|c: &char| c < &'\u{128}')
 }
 
@@ -139,7 +139,7 @@ pub fn is_space(c: &char) -> bool {
 
 /// Accepts a single newline character, but treats `"\r\n"` as one.
 #[inline(always)]
-pub fn newline<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
+pub fn newline<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, (), C, S, M> {
     no_state(satisfy_map(get_nl_kind).case(|kind, k| match kind {
         NLKind::LineFeed | NLKind::Other => k.to(()),
         NLKind::CarriageReturn => k.then(char('\n').or_not().to(())),
@@ -149,7 +149,7 @@ pub fn newline<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S,
 
 /// A single whitespace character is accepted, excluding newline characters.
 #[inline]
-pub fn no_break<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
+pub fn no_break<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, (), C, S, M> {
     satisfy_map(|c: &char| match get_sp_kind(c)? {
         SpaceKind::Indentable(_) | SpaceKind::Other(_) => Some(()),
         _ => None,
@@ -158,36 +158,36 @@ pub fn no_break<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S
 
 // Take one non-space character
 #[inline]
-pub fn no_ws<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = char> {
+pub fn no_ws<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, char, C, S, M> {
     satisfy(|c: &char| get_sp_kind(c).is_none())
 }
 
 /// Accept any single space character.
 #[inline]
-pub fn space<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
+pub fn space<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, (), C, S, M> {
     satisfy_map(get_sp_kind).to(())
 }
 
 /// Greedily accepts a sequence of whitespace characters that do not contain a newline character.
 #[inline]
-pub fn no_break_ws<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
+pub fn no_break_ws<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, (), C, S, M> {
     no_state(no_break.skip_many())
 }
 
 /// It greedily accepts a sequence of one or more whitespace characters, not including newline characters.
 #[inline]
-pub fn no_break_ws1<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
+pub fn no_break_ws1<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, (), C, S, M> {
     no_state(no_break.skip_many1())
 }
 
 /// A sequence of whitespace characters is greedily accepted.
 #[inline(always)]
-pub fn ws<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
+pub fn ws<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, (), C, S, M> {
     no_state(satisfy_map(get_sp_kind).skip_many())
 }
 /// A sequence of one or more whitespace characters will be greedily accepted.
 #[inline(always)]
-pub fn ws1<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = ()> {
+pub fn ws1<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, (), C, S, M> {
     no_state(satisfy_map(get_sp_kind).skip_many1())
 }
 
@@ -205,7 +205,7 @@ impl NLS {
 // まだspaceの種類とか考えずにやるだけ
 /// Takes a sequence of whitespace characters and returns the number of times a newline was broken followed by a non-newline whitespace.
 #[inline]
-pub fn nls<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, C, S, M, Output = NLS> {
+pub fn nls<I: Input<Item = char>, S, C, M: Cb>() -> impl ParserOnce<I, NLS, C, S, M> {
     no_state(tail_rec((NLS::new(), false), |(nls @ NLS { newline, space }, after_r)| {
         satisfy_map(get_sp_kind).or_not().map(move |kind| match kind {
             None => Ok(nls),

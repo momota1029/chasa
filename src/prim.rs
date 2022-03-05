@@ -1,4 +1,8 @@
-use std::{fmt::Display, marker::PhantomData, ops::{Bound, RangeBounds}};
+use std::{
+    fmt::Display,
+    marker::PhantomData,
+    ops::{Bound, RangeBounds},
+};
 
 use either::Either;
 
@@ -9,16 +13,16 @@ use crate::{
     ICont, IOk, IResult, IReturn, Input, Parser, ParserOnce,
 };
 
-impl<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, F: FnOnce() -> P> ParserOnce<I, C, S, M> for F {
-    type Output = P::Output;
-    #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Self::Output, I, S, M> {
+impl<I: Input, C, S, M: Cb, Output, P: ParserOnce<I, Output, C, S, M>, F: FnOnce() -> P> ParserOnce<I, Output, C, S, M>
+    for F
+{
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Output, I, S, M> {
         self().run_once(cont)
     }
 }
-impl<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, F: Fn() -> P> Parser<I, C, S, M> for F {
+impl<I: Input, C, S, M: Cb, Output, P: ParserOnce<I, Output, C, S, M>, F: Fn() -> P> Parser<I, Output, C, S, M> for F {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Self::Output, I, S, M> {
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Output, I, S, M> {
         self().run_once(cont)
     }
 }
@@ -28,7 +32,7 @@ impl<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, F: Fn() -> P> Parser<I, C
 /// # Example
 /// ```
 /// use chasa::*;
-/// fn p<I:Input<Item=char>+Clone>() -> impl EasyParser<I,Output=String> {
+/// fn p<I:Input<Item=char>+Clone>() -> impl EasyParser<I,String> {
 ///     // Note the reverse order
 ///     parser_mv(|k| k.then(any.and(p).map(|(x,mut xs)| {xs.push(x); xs}).or(pure(String::new()))))
 /// }
@@ -54,16 +58,17 @@ pub fn parser_mv<I: Input, O, C, S, M: Cb, F: FnOnce(ICont<I, C, S, M>) -> IRetu
 ) -> FnParser<F> {
     FnParser(f)
 }
-impl<O, I: Input, C, S, M: Cb, F: FnOnce(ICont<I, C, S, M>) -> IReturn<O, I, C, S, M>> ParserOnce<I, C, S, M>
+impl<O, I: Input, C, S, M: Cb, F: FnOnce(ICont<I, C, S, M>) -> IReturn<O, I, C, S, M>> ParserOnce<I, O, C, S, M>
     for FnParser<F>
 {
-    type Output = O;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         self.0(cont).0.map(|(o, cont)| (o, cont.ok))
     }
 }
-impl<O, I: Input, C, S, M: Cb, F: Fn(ICont<I, C, S, M>) -> IReturn<O, I, C, S, M>> Parser<I, C, S, M> for FnParser<F> {
+impl<O, I: Input, C, S, M: Cb, F: Fn(ICont<I, C, S, M>) -> IReturn<O, I, C, S, M>> Parser<I, O, C, S, M>
+    for FnParser<F>
+{
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         self.0(cont).0.map(|(o, cont)| (o, cont.ok))
@@ -87,26 +92,24 @@ impl<'a, P> Clone for RefParser<'a, P> {
     }
 }
 impl<'a, P> Copy for RefParser<'a, P> {}
-impl<'a, I: Input, C, S, M: Cb, P: Parser<I, C, S, M>> ParserOnce<I, C, S, M> for RefParser<'a, P> {
-    type Output = P::Output;
+impl<'a, I: Input, O, C, S, M: Cb, P: Parser<I, O, C, S, M>> ParserOnce<I, O, C, S, M> for RefParser<'a, P> {
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<P::Output, I, S, M> {
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         self.0.run(cont)
     }
 }
-impl<'a, I: Input, C, S, M: Cb, P: Parser<I, C, S, M>> Parser<I, C, S, M> for RefParser<'a, P> {
+impl<'a, I: Input, O, C, S, M: Cb, P: Parser<I, O, C, S, M>> Parser<I, O, C, S, M> for RefParser<'a, P> {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<P::Output, I, S, M> {
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         self.0.run(cont)
     }
 }
 
-impl<I: Input, C, S, M: Cb, P1: ParserOnce<I, C, S, M>, P2: ParserOnce<I, C, S, M, Output = P1::Output>>
-    ParserOnce<I, C, S, M> for Either<P1, P2>
+impl<I: Input, O, C, S, M: Cb, P1: ParserOnce<I, O, C, S, M>, P2: ParserOnce<I, O, C, S, M>> ParserOnce<I, O, C, S, M>
+    for Either<P1, P2>
 {
-    type Output = P1::Output;
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<P1::Output, I, S, M> {
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         match self {
             Either::Left(left) => left.run_once(cont),
             Either::Right(right) => right.run_once(cont),
@@ -120,14 +123,13 @@ pub struct Pure<O>(O);
 pub fn pure<O>(o: O) -> Pure<O> {
     Pure(o)
 }
-impl<O, I: Input, C, S, M: Cb> ParserOnce<I, C, S, M> for Pure<O> {
-    type Output = O;
+impl<O, I: Input, C, S, M: Cb> ParserOnce<I, O, C, S, M> for Pure<O> {
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         Ok((self.0, cont.ok))
     }
 }
-impl<O: Clone, I: Input, C, S, M: Cb> Parser<I, C, S, M> for Pure<O> {
+impl<O: Clone, I: Input, C, S, M: Cb> Parser<I, O, C, S, M> for Pure<O> {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         Ok((self.0.clone(), cont.ok))
@@ -146,8 +148,7 @@ pub struct Fail<O, M: Cb>(Eb<M>, PhantomData<fn() -> O>);
 pub fn fail<M: Cb, O>(err: Eb<M>) -> Fail<O, M> {
     Fail(err, PhantomData)
 }
-impl<O, I: Input, C, S, M: Cb> ParserOnce<I, C, S, M> for Fail<O, M> {
-    type Output = O;
+impl<O, I: Input, C, S, M: Cb> ParserOnce<I, O, C, S, M> for Fail<O, M> {
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         Err(self.0.at::<I>(cont.ok.input.index(), cont.ok.input.pos(), None))
     }
@@ -172,14 +173,13 @@ impl<I, C, S, M> Copy for EoI<I, C, S, M> {}
 pub fn eoi<I, C, S, M>() -> EoI<I, C, S, M> {
     EoI(PhantomData)
 }
-impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb> ParserOnce<I, C, S, M> for EoI<I, C, S, M> {
-    type Output = ();
+impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb> ParserOnce<I, (), C, S, M> for EoI<I, C, S, M> {
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<(), I, S, M> {
         self.run(cont)
     }
 }
-impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb> Parser<I, C, S, M> for EoI<I, C, S, M> {
+impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb> Parser<I, (), C, S, M> for EoI<I, C, S, M> {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<(), I, S, M> {
         let mut ok = cont.ok;
@@ -211,14 +211,13 @@ impl<I, C, S, M> Copy for Any<I, C, S, M> {}
 pub fn any<I, C, S, M>() -> Any<I, C, S, M> {
     Any(PhantomData)
 }
-impl<I: Input, C, S, M: Cb> ParserOnce<I, C, S, M> for Any<I, C, S, M> {
-    type Output = I::Item;
+impl<I: Input, C, S, M: Cb> ParserOnce<I, I::Item, C, S, M> for Any<I, C, S, M> {
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
         self.run(cont)
     }
 }
-impl<I: Input, C, S, M: Cb> Parser<I, C, S, M> for Any<I, C, S, M> {
+impl<I: Input, C, S, M: Cb> Parser<I, I::Item, C, S, M> for Any<I, C, S, M> {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
         let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
@@ -256,17 +255,16 @@ impl<Item: Copy, I, C, S, M> Copy for Char<Item, I, C, S, M> {}
 pub fn char<Item, I, C, S, M>(char: Item) -> Char<Item, I, C, S, M> {
     Char(char, PhantomData)
 }
-impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item> + Display> ParserOnce<I, C, S, M>
-    for Char<Item, I, C, S, M>
+impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item> + Display>
+    ParserOnce<I, I::Item, C, S, M> for Char<Item, I, C, S, M>
 {
-    type Output = I::Item;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
         self.run(cont)
     }
 }
-impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item> + Display> Parser<I, C, S, M>
-    for Char<Item, I, C, S, M>
+impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item> + Display>
+    Parser<I, I::Item, C, S, M> for Char<Item, I, C, S, M>
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
@@ -303,22 +301,22 @@ impl<Iter: Copy, Item, I, C, S, M> Copy for OneOf<Iter, Item, I, C, S, M> {}
 pub fn one_of<Iter: CharsOrRange<Item>, Item, I, C, S, M>(chars: Iter) -> OneOf<Iter::To, Item, I, C, S, M> {
     OneOf(chars.to(), PhantomData)
 }
-impl<I: Input, C, S, M: Cb, Item, Iter> Parser<I, C, S, M> for OneOf<Iter, Item, I, C, S, M>
+impl<I: Input, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoChars<Item = Item>> Parser<I, I::Item, C, S, M>
+    for OneOf<Iter, Item, I, C, S, M>
 where
     I::Item: Display + 'static,
-    Self: ParserOnce<I, C, S, M, Output = I::Item> + Clone,
+    Self: Clone,
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
         self.clone().run_once(cont)
     }
 }
-impl<I: Input, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoChars<Item = Item>> ParserOnce<I, C, S, M>
+impl<I: Input, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoChars<Item = Item>> ParserOnce<I, I::Item, C, S, M>
     for OneOf<Iter, Item, I, C, S, M>
 where
     I::Item: Display + 'static,
 {
-    type Output = I::Item;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
         let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
@@ -335,14 +333,23 @@ where
         }
     }
 }
-impl<I: Input, C, S, M: Cb, Item: PartialOrd<I::Item>> ParserOnce<I, C, S, M>
-    for OneOf<(Bound<Item>,Bound<Item>), Item, I, C, S, M>
+impl<I: Input, C, S, M: Cb, Item: PartialOrd<I::Item>> ParserOnce<I, I::Item, C, S, M>
+    for OneOf<(Bound<Item>, Bound<Item>), Item, I, C, S, M>
 where
     I::Item: PartialOrd<Item> + Display + 'static,
 {
-    type Output = I::Item;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
+        self.run(cont)
+    }
+}
+impl<I: Input, C, S, M: Cb, Item: PartialOrd<I::Item>> Parser<I, I::Item, C, S, M>
+    for OneOf<(Bound<Item>, Bound<Item>), Item, I, C, S, M>
+where
+    I::Item: PartialOrd<Item> + Display + 'static,
+{
+    #[inline]
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
         let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
         match run_satisfy(
             &mut input,
@@ -381,10 +388,10 @@ impl<Iter: Copy, Item, I, C, S, M> Copy for NoneOf<Iter, Item, I, C, S, M> {}
 pub fn none_of<Iter: CharsOrRange<Item>, Item, I, C, S, M>(chars: Iter) -> NoneOf<Iter::To, Item, I, C, S, M> {
     NoneOf(chars.to(), PhantomData)
 }
-impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item, Iter> Parser<I, C, S, M>
-    for NoneOf<Iter, Item, I, C, S, M>
+impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoChars<Item = Item>>
+    Parser<I, I::Item, C, S, M> for NoneOf<Iter, Item, I, C, S, M>
 where
-    Self: ParserOnce<I, C, S, M, Output = I::Item> + Clone,
+    Self: Clone,
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
@@ -392,9 +399,8 @@ where
     }
 }
 impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::Item>, Iter: IntoChars<Item = Item>>
-    ParserOnce<I, C, S, M> for NoneOf<Iter, Item, I, C, S, M>
+    ParserOnce<I, I::Item, C, S, M> for NoneOf<Iter, Item, I, C, S, M>
 {
-    type Output = I::Item;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
         let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
@@ -417,11 +423,18 @@ impl<I: Input<Item = impl Display + 'static>, C, S, M: Cb, Item: PartialEq<I::It
     }
 }
 impl<I: Input<Item = impl PartialOrd<Item> + Display + 'static>, C, S, M: Cb, Item: PartialOrd<I::Item>>
-    ParserOnce<I, C, S, M> for NoneOf<(Bound<Item>,Bound<Item>), Item, I, C, S, M>
+    ParserOnce<I, I::Item, C, S, M> for NoneOf<(Bound<Item>, Bound<Item>), Item, I, C, S, M>
 {
-    type Output = I::Item;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
+        self.run(cont)
+    }
+}
+impl<I: Input<Item = impl PartialOrd<Item> + Display + 'static>, C, S, M: Cb, Item: PartialOrd<I::Item>>
+    Parser<I, I::Item, C, S, M> for NoneOf<(Bound<Item>, Bound<Item>), Item, I, C, S, M>
+{
+    #[inline]
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
         let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
         match run_satisfy(
             &mut input,
@@ -469,9 +482,8 @@ impl<
         S,
         M: Cb,
         Iter: IntoChars<Item = impl PartialEq<I::Item> + Display + 'static>,
-    > ParserOnce<I, C, S, M> for String<Iter, I, C, S, M>
+    > ParserOnce<I, (), C, S, M> for String<Iter, I, C, S, M>
 {
-    type Output = ();
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<(), I, S, M> {
         let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
@@ -506,7 +518,7 @@ impl<
         S,
         M: Cb,
         Iter: IntoChars<Item = impl PartialEq<I::Item> + Display + 'static> + Clone,
-    > Parser<I, C, S, M> for String<Iter, I, C, S, M>
+    > Parser<I, (), C, S, M> for String<Iter, I, C, S, M>
 {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<(), I, S, M> {
@@ -531,11 +543,10 @@ impl<F: Clone, I, C, S, M> Clone for Satisfy<F, I, C, S, M> {
     }
 }
 impl<F: Copy, I, C, S, M> Copy for Satisfy<F, I, C, S, M> {}
-impl<I: Input, C, S, M: Cb, F: FnOnce(&I::Item) -> bool> ParserOnce<I, C, S, M> for Satisfy<F, I, C, S, M>
+impl<I: Input, C, S, M: Cb, F: FnOnce(&I::Item) -> bool> ParserOnce<I, I::Item, C, S, M> for Satisfy<F, I, C, S, M>
 where
     I::Item: Display + 'static,
 {
-    type Output = I::Item;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<I::Item, I, S, M> {
         let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
@@ -557,7 +568,7 @@ where
         }
     }
 }
-impl<I: Input, C, S, M: Cb, F: Fn(&I::Item) -> bool> Parser<I, C, S, M> for Satisfy<F, I, C, S, M>
+impl<I: Input, C, S, M: Cb, F: Fn(&I::Item) -> bool> Parser<I, I::Item, C, S, M> for Satisfy<F, I, C, S, M>
 where
     I::Item: Display + 'static,
 {
@@ -599,11 +610,10 @@ impl<F: Clone, I, C, S, M> Clone for SatisfyMap<F, I, C, S, M> {
     }
 }
 impl<F: Copy, I, C, S, M> Copy for SatisfyMap<F, I, C, S, M> {}
-impl<O, I: Input, C, S, M: Cb, F: FnOnce(&I::Item) -> Option<O>> ParserOnce<I, C, S, M> for SatisfyMap<F, I, C, S, M>
+impl<O, I: Input, C, S, M: Cb, F: FnOnce(&I::Item) -> Option<O>> ParserOnce<I, O, C, S, M> for SatisfyMap<F, I, C, S, M>
 where
     I::Item: Display + 'static,
 {
-    type Output = O;
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         let ICont { ok: IOk { mut input, err, state, .. }, drop, .. } = cont;
@@ -624,7 +634,7 @@ where
         }
     }
 }
-impl<O, I: Input, C, S, M: Cb, F: Fn(&I::Item) -> Option<O>> Parser<I, C, S, M> for SatisfyMap<F, I, C, S, M>
+impl<O, I: Input, C, S, M: Cb, F: Fn(&I::Item) -> Option<O>> Parser<I, O, C, S, M> for SatisfyMap<F, I, C, S, M>
 where
     I::Item: Display + 'static,
 {
@@ -655,16 +665,17 @@ pub struct Config<F>(F);
 pub fn config<F>(f: F) -> Config<F> {
     Config(f)
 }
-impl<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, F: FnOnce(&C) -> P> ParserOnce<I, C, S, M> for Config<F> {
-    type Output = P::Output;
+impl<I: Input, O, C, S, M: Cb, P: ParserOnce<I, O, C, S, M>, F: FnOnce(&C) -> P> ParserOnce<I, O, C, S, M>
+    for Config<F>
+{
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<P::Output, I, S, M> {
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         self.0(cont.config).run_once(cont)
     }
 }
-impl<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, F: Fn(&C) -> P> Parser<I, C, S, M> for Config<F> {
+impl<I: Input, O, C, S, M: Cb, P: ParserOnce<I, O, C, S, M>, F: Fn(&C) -> P> Parser<I, O, C, S, M> for Config<F> {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<P::Output, I, S, M> {
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         self.0(cont.config).run_once(cont)
     }
 }
@@ -675,17 +686,16 @@ pub struct SetConfig<C, C2, P>(C, P, PhantomData<fn() -> C2>);
 pub fn set_config<C, P, C2>(config: C, parser: P) -> SetConfig<C, C2, P> {
     SetConfig(config, parser, PhantomData)
 }
-impl<I: Input, C, C2, S, M: Cb, P: ParserOnce<I, C, S, M>> ParserOnce<I, C2, S, M> for SetConfig<C, C2, P> {
-    type Output = P::Output;
+impl<I: Input, O, C, C2, S, M: Cb, P: ParserOnce<I, O, C, S, M>> ParserOnce<I, O, C2, S, M> for SetConfig<C, C2, P> {
     #[inline]
-    fn run_once(self, cont: ICont<I, C2, S, M>) -> IResult<P::Output, I, S, M> {
+    fn run_once(self, cont: ICont<I, C2, S, M>) -> IResult<O, I, S, M> {
         let ICont { ok, drop, config: _ } = cont;
         self.1.run_once(ICont { ok, config: &self.0, drop })
     }
 }
-impl<I: Input, C, C2, S, M: Cb, P: Parser<I, C, S, M>> Parser<I, C2, S, M> for SetConfig<C, C2, P> {
+impl<I: Input, O, C, C2, S, M: Cb, P: Parser<I, O, C, S, M>> Parser<I, O, C2, S, M> for SetConfig<C, C2, P> {
     #[inline]
-    fn run(&self, cont: ICont<I, C2, S, M>) -> IResult<P::Output, I, S, M> {
+    fn run(&self, cont: ICont<I, C2, S, M>) -> IResult<O, I, S, M> {
         let ICont { ok, drop, config: _ } = cont;
         self.1.run(ICont { ok, config: &self.0, drop })
     }
@@ -697,14 +707,13 @@ pub struct Pos;
 pub fn pos() -> Pos {
     Pos
 }
-impl<I: Input, C, S, M: Cb> ParserOnce<I, C, S, M> for Pos {
-    type Output = I::Pos;
+impl<I: Input, C, S, M: Cb> ParserOnce<I, I::Pos, C, S, M> for Pos {
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<I::Pos, I, S, M> {
         self.run(cont)
     }
 }
-impl<I: Input, C, S, M: Cb> Parser<I, C, S, M> for Pos {
+impl<I: Input, C, S, M: Cb> Parser<I, I::Pos, C, S, M> for Pos {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<I::Pos, I, S, M> {
         let ICont { ok, .. } = cont;
@@ -718,15 +727,14 @@ pub struct State<F>(F);
 pub fn state<F>(f: F) -> State<F> {
     State(f)
 }
-impl<I: Input, C, S, M: Cb, F: FnOnce(S) -> S> ParserOnce<I, C, S, M> for State<F> {
-    type Output = ();
+impl<I: Input, C, S, M: Cb, F: FnOnce(S) -> S> ParserOnce<I, (), C, S, M> for State<F> {
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<(), I, S, M> {
         let IOk { input, err, state, cutted, .. } = cont.ok;
         Ok(((), IOk { input, state: self.0(state), err, cutted }))
     }
 }
-impl<I: Input, C, S, M: Cb, F: Fn(S) -> S> Parser<I, C, S, M> for State<F> {
+impl<I: Input, C, S, M: Cb, F: Fn(S) -> S> Parser<I, (), C, S, M> for State<F> {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<(), I, S, M> {
         let IOk { input, err, state, cutted, .. } = cont.ok;
@@ -740,16 +748,17 @@ pub struct GetState<F>(F);
 pub fn get_state<F>(f: F) -> GetState<F> {
     GetState(f)
 }
-impl<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, F: FnOnce(&S) -> P> ParserOnce<I, C, S, M> for GetState<F> {
-    type Output = P::Output;
+impl<I: Input, O, C, S, M: Cb, P: ParserOnce<I, O, C, S, M>, F: FnOnce(&S) -> P> ParserOnce<I, O, C, S, M>
+    for GetState<F>
+{
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<P::Output, I, S, M> {
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         self.0(&cont.ok.state).run_once(cont)
     }
 }
-impl<I: Input, C, S, M: Cb, P: ParserOnce<I, C, S, M>, F: Fn(&S) -> P> Parser<I, C, S, M> for GetState<F> {
+impl<I: Input, O, C, S, M: Cb, P: ParserOnce<I, O, C, S, M>, F: Fn(&S) -> P> Parser<I, O, C, S, M> for GetState<F> {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<P::Output, I, S, M> {
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
         self.0(&cont.ok.state).run_once(cont)
     }
 }
@@ -760,15 +769,14 @@ pub struct SetState<S>(S);
 pub fn set_state<S>(state: S) -> SetState<S> {
     SetState(state)
 }
-impl<I: Input, C, S, M: Cb> ParserOnce<I, C, S, M> for SetState<S> {
-    type Output = ();
+impl<I: Input, C, S, M: Cb> ParserOnce<I, (), C, S, M> for SetState<S> {
     #[inline]
     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<(), I, S, M> {
         let ICont { ok: IOk { input, err, cutted, .. }, .. } = cont;
         Ok(((), IOk { input, state: self.0, err, cutted }))
     }
 }
-impl<I: Input, C, S: Clone, M: Cb> Parser<I, C, S, M> for SetState<S> {
+impl<I: Input, C, S: Clone, M: Cb> Parser<I, (), C, S, M> for SetState<S> {
     #[inline]
     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<(), I, S, M> {
         let ICont { ok: IOk { input, err, cutted, .. }, .. } = cont;
@@ -791,21 +799,22 @@ pub fn local_state<S, SLocal, P>(state: SLocal, parser: P) -> LocalState<S, SLoc
 pub fn no_state<S, P>(parser: P) -> LocalState<S, (), P> {
     LocalState((), parser, PhantomData)
 }
-impl<I: Input, C, S, SLocal, M: Cb, P: ParserOnce<I, C, SLocal, M>> ParserOnce<I, C, S, M>
+impl<I: Input, Output, C, S, SLocal, M: Cb, P: ParserOnce<I, Output, C, SLocal, M>> ParserOnce<I, Output, C, S, M>
     for LocalState<S, SLocal, P>
 {
-    type Output = P::Output;
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<P::Output, I, S, M> {
+    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Output, I, S, M> {
         let ICont { ok: IOk { input, err, cutted, state }, drop, config, .. } = cont;
         self.1
             .run_once(ICont { ok: IOk { input, err, cutted, state: self.0 }, drop, config })
             .map(|(o, IOk { input, err, cutted, state: _ })| (o, IOk { input, err, cutted, state }))
     }
 }
-impl<I: Input, C, S, SLocal: Clone, M: Cb, P: Parser<I, C, SLocal, M>> Parser<I, C, S, M> for LocalState<S, SLocal, P> {
+impl<I: Input, Output, C, S, SLocal: Clone, M: Cb, P: Parser<I, Output, C, SLocal, M>> Parser<I, Output, C, S, M>
+    for LocalState<S, SLocal, P>
+{
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<P::Output, I, S, M> {
+    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Output, I, S, M> {
         let ICont { ok: IOk { input, err, cutted, state }, drop, config, .. } = cont;
         self.1
             .run(ICont { ok: IOk { input, err, cutted, state: self.0.clone() }, drop, config })

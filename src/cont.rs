@@ -1,4 +1,4 @@
-use std::{fmt::Display, iter::once};
+use std::{fmt::Display, iter::once, marker::PhantomData};
 
 use crate::{
     before,
@@ -18,14 +18,14 @@ impl<'a, I: Input, C, S, M: Cb> ICont<'a, I, C, S, M> {
         IReturn(Ok(((), self)))
     }
     #[inline]
-    pub fn to_or<P: Parser<I, C, S, M>>(self, o: Option<P::Output>, p: P) -> IReturn<'a, P::Output, I, C, S, M> {
+    pub fn to_or<O, P: Parser<I, O, C, S, M>>(self, o: Option<O>, p: P) -> IReturn<'a, O, I, C, S, M> {
         match o {
             Some(o) => self.to(o),
             None => self.then(p),
         }
     }
     #[inline]
-    pub fn then<P: ParserOnce<I, C, S, M>>(self, p: P) -> IReturn<'a, P::Output, I, C, S, M> {
+    pub fn then<P: ParserOnce<I, O, C, S, M>, O>(self, p: P) -> IReturn<'a, O, I, C, S, M> {
         let ICont { config, drop, ok } = self;
         IReturn(p.run_once(ICont { config, drop, ok }).map(|(o, ok)| (o, ok.to_cont(config, drop))))
     }
@@ -49,18 +49,18 @@ impl<'a, I: Input, C, S, M: Cb> ICont<'a, I, C, S, M> {
 }
 impl<'a, I: Input, C, S: Clone, M: Cb> ICont<'a, I, C, S, M> {
     #[inline]
-    pub fn before<P: ParserOnce<I, C, S, M>>(self, p: P) -> IReturn<'a, P::Output, I, C, S, M> {
+    pub fn before<P: ParserOnce<I, O, C, S, M>, O>(self, p: P) -> IReturn<'a, O, I, C, S, M> {
         self.then(before(p))
     }
     #[inline]
-    pub fn not_followed_by(
-        self, p: impl ParserOnce<I, C, S, M>, label: impl Display + 'static,
+    pub fn not_followed_by<O2>(
+        self, p: impl ParserOnce<I, O2, C, S, M>, label: impl Display + 'static,
     ) -> IReturn<'a, (), I, C, S, M> {
         self.then(not_followed_by(p, label))
     }
-    pub fn fold<O, P: Parser<I, C, S, M>>(
-        self, o1: O, p: P, f: impl Fn(O, P::Output) -> O,
-    ) -> IReturn<'a, O, I, C, S, M> {
+    pub fn fold<O1, O2, P: Parser<I, O2, C, S, M>>(
+        self, o1: O1, p: P, f: impl Fn(O1, O2) -> O1,
+    ) -> IReturn<'a, O1, I, C, S, M> {
         let ICont { ok, config, drop } = self;
         let (input2, state2, cutted) = (ok.input.clone(), ok.state.clone(), ok.cutted);
         match run_drop(p.to_ref(), ICont { ok, config, drop }, (input2, state2)) {
@@ -72,21 +72,21 @@ impl<'a, I: Input, C, S: Clone, M: Cb> ICont<'a, I, C, S, M> {
         }
     }
     #[inline]
-    pub fn fold1<O, P: Parser<I, C, S, M>>(
-        self, o1: O, p: P, f: impl Fn(O, P::Output) -> O,
-    ) -> IReturn<'a, O, I, C, S, M> {
+    pub fn fold1<O1, O2, P: Parser<I, O2, C, S, M>>(
+        self, o1: O1, p: P, f: impl Fn(O1, O2) -> O1,
+    ) -> IReturn<'a, O1, I, C, S, M> {
         self.then(p.to_ref()).case(|o2, k| k.fold(f(o1, o2), p, f))
     }
 
     #[inline]
-    pub fn extend<O: Extend<P::Output>, P: Parser<I, C, S, M>>(self, o: O, p: P) -> IReturn<'a, O, I, C, S, M> {
+    pub fn extend<B: Extend<O>, O, P: Parser<I, O, C, S, M>>(self, o: B, p: P) -> IReturn<'a, B, I, C, S, M> {
         self.fold(o, p, |mut o, v| {
             o.extend(once(v));
             o
         })
     }
     #[inline]
-    pub fn extend1<O: Extend<P::Output>, P: Parser<I, C, S, M>>(self, o: O, p: P) -> IReturn<'a, O, I, C, S, M> {
+    pub fn extend1<B: Extend<O>, O, P: Parser<I, O, C, S, M>>(self, o: B, p: P) -> IReturn<'a, B, I, C, S, M> {
         self.fold1(o, p, |mut o, v| {
             o.extend(once(v));
             o
@@ -94,23 +94,23 @@ impl<'a, I: Input, C, S: Clone, M: Cb> ICont<'a, I, C, S, M> {
     }
 
     #[inline]
-    pub fn sep_fold<O, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(
-        self, o: O, p: P1, sep: P2, f: impl Fn(O, P1::Output) -> O,
+    pub fn sep_fold<O, O1, O2, P1: Parser<I, O1, C, S, M>, P2: Parser<I, O2, C, S, M>>(
+        self, o: O, p: P1, sep: P2, f: impl Fn(O, O1) -> O,
     ) -> IReturn<'a, O, I, C, S, M> {
-        self.then(fold::SepFold { init: o, p, sep, succ: f })
+        self.then(fold::SepFold { init: o, p, sep, succ: f, _marker: PhantomData })
     }
 
     #[inline]
-    pub fn sep_extend<O: Extend<P1::Output>, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(
-        self, o: O, p: P1, sep: P2,
-    ) -> IReturn<'a, O, I, C, S, M> {
-        self.then(fold::SepExtend { init: o, p, sep })
+    pub fn sep_extend<B: Extend<O>, O, P1: Parser<I, O, C, S, M>, P2: Parser<I, O2, C, S, M>, O2>(
+        self, o: B, p: P1, sep: P2,
+    ) -> IReturn<'a, B, I, C, S, M> {
+        self.then(fold::SepExtend { init: o, p, sep, _marker: PhantomData })
     }
     #[inline]
-    pub fn sep_extend1<O: Extend<P1::Output>, P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(
-        self, o: O, p: P1, sep: P2,
-    ) -> IReturn<'a, O, I, C, S, M> {
-        self.then(fold::SepExtend1 { init: o, p, sep })
+    pub fn sep_extend1<B: Extend<O>, O, P1: Parser<I, O, C, S, M>, P2: Parser<I, O2, C, S, M>, O2>(
+        self, o: B, p: P1, sep: P2,
+    ) -> IReturn<'a, B, I, C, S, M> {
+        self.then(fold::SepExtend1 { init: o, p, sep, _marker: PhantomData })
     }
 }
 impl<'a, O, I: Input, C, S, M: Cb> IReturn<'a, O, I, C, S, M> {
@@ -133,19 +133,19 @@ impl<'a, O, I: Input, C, S, M: Cb> IReturn<'a, O, I, C, S, M> {
         IReturn(self.0.map(|(_, k)| ((), k)))
     }
     #[inline]
-    pub fn bind<P: ParserOnce<I, C, S, M>>(self, f: impl FnOnce(O) -> P) -> IReturn<'a, P::Output, I, C, S, M> {
+    pub fn bind<P: ParserOnce<I, O2, C, S, M>, O2>(self, f: impl FnOnce(O) -> P) -> IReturn<'a, O2, I, C, S, M> {
         self.case(|o, k| k.then(f(o)))
     }
     #[inline]
-    pub fn and<P: ParserOnce<I, C, S, M>>(self, p: P) -> IReturn<'a, (O, P::Output), I, C, S, M> {
+    pub fn and<P: ParserOnce<I, O2, C, S, M>, O2>(self, p: P) -> IReturn<'a, (O, O2), I, C, S, M> {
         self.case(|o1, k| k.then(p).map(|o2| (o1, o2)))
     }
     #[inline]
-    pub fn left<P: ParserOnce<I, C, S, M>>(self, p: P) -> IReturn<'a, O, I, C, S, M> {
+    pub fn left<P: ParserOnce<I, O2, C, S, M>, O2>(self, p: P) -> IReturn<'a, O, I, C, S, M> {
         self.case(|o, k| k.then(p).to(o))
     }
     #[inline]
-    pub fn right<P: ParserOnce<I, C, S, M>>(self, p: P) -> IReturn<'a, P::Output, I, C, S, M> {
+    pub fn right<P: ParserOnce<I, O2, C, S, M>, O2>(self, p: P) -> IReturn<'a, O2, I, C, S, M> {
         self.case(|_, k| k.then(p))
     }
     #[inline]
@@ -162,53 +162,53 @@ impl<'a, O, I: Input, C, S, M: Cb> IReturn<'a, O, I, C, S, M> {
 
 impl<'a, O, I: Input, C, S: Clone, M: Cb> IReturn<'a, O, I, C, S, M> {
     #[inline]
-    pub fn fold<P: Parser<I, C, S, M>>(self, p: P, f: impl Fn(O, P::Output) -> O) -> IReturn<'a, O, I, C, S, M> {
+    pub fn fold<P: Parser<I, O2, C, S, M>, O2>(self, p: P, f: impl Fn(O, O2) -> O) -> IReturn<'a, O, I, C, S, M> {
         self.case(|o, k| k.fold(o, p, f))
     }
     #[inline]
-    pub fn fold1<P: Parser<I, C, S, M>>(self, p: P, f: impl Fn(O, P::Output) -> O) -> IReturn<'a, O, I, C, S, M> {
+    pub fn fold1<P: Parser<I, O2, C, S, M>, O2>(self, p: P, f: impl Fn(O, O2) -> O) -> IReturn<'a, O, I, C, S, M> {
         self.case(|o, k| k.fold1(o, p, f))
     }
     #[inline]
-    pub fn extend<P: Parser<I, C, S, M>>(self, p: P) -> IReturn<'a, O, I, C, S, M>
+    pub fn extend<P: Parser<I, O2, C, S, M>, O2>(self, p: P) -> IReturn<'a, O, I, C, S, M>
     where
-        O: Extend<P::Output>,
+        O: Extend<O2>,
     {
         self.case(|o, k| k.extend(o, p))
     }
     #[inline]
-    pub fn extend1<P: Parser<I, C, S, M>>(self, p: P) -> IReturn<'a, O, I, C, S, M>
+    pub fn extend1<P: Parser<I, O2, C, S, M>, O2>(self, p: P) -> IReturn<'a, O, I, C, S, M>
     where
-        O: Extend<P::Output>,
+        O: Extend<O2>,
     {
         self.case(|o, k| k.extend1(o, p))
     }
     #[inline]
-    pub fn not_followed_by(self, p: impl ParserOnce<I, C, S, M>, label: impl Display + 'static) -> Self {
+    pub fn not_followed_by<O2>(self, p: impl ParserOnce<I, O2, C, S, M>, label: impl Display + 'static) -> Self {
         self.left(not_followed_by(p, label))
     }
     #[inline]
-    pub fn sep_fold<P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(
-        self, p: P1, sep: P2, f: impl Fn(O, P1::Output) -> O,
+    pub fn sep_fold<O1, P1: Parser<I, O1, C, S, M>, P2: Parser<I, O2, C, S, M>, O2>(
+        self, p: P1, sep: P2, f: impl Fn(O, O1) -> O,
     ) -> IReturn<'a, O, I, C, S, M> {
         self.case(|o, k| k.sep_fold(o, p, sep, f))
     }
 
     #[inline]
-    pub fn sep_extend<P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(
+    pub fn sep_extend<O1, P1: Parser<I, O1, C, S, M>, P2: Parser<I, O2, C, S, M>, O2>(
         self, p: P1, sep: P2,
     ) -> IReturn<'a, O, I, C, S, M>
     where
-        O: Extend<P1::Output>,
+        O: Extend<O1>,
     {
         self.case(|o, k| k.sep_extend(o, p, sep))
     }
     #[inline]
-    pub fn sep_extend1<P1: Parser<I, C, S, M>, P2: Parser<I, C, S, M>>(
+    pub fn sep_extend1<O1, P1: Parser<I, O1, C, S, M>, P2: Parser<I, O2, C, S, M>, O2>(
         self, p: P1, sep: P2,
     ) -> IReturn<'a, O, I, C, S, M>
     where
-        O: Extend<P1::Output>,
+        O: Extend<O1>,
     {
         self.case(|o, k| k.sep_extend1(o, p, sep))
     }
