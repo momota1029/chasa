@@ -1,25 +1,30 @@
-use std::{fmt::Display, marker::PhantomData};
+use std::marker::PhantomData;
 
 use either::Either;
 
-use crate::{
-    error::{Builder as Eb, CustomBuilder as Cb},
+pub use super::using_macros::{chain, choice, skip_chain, tuple, Chain, ChainRight, Choice};
+use super::{
+    cont::Cont,
+    error,
+    error::ParseError,
     input::Input,
+    input::Position,
+    parser::{Args, Parser, ParserOnce},
     prim::{pure, Pure},
-    parser::{ICont, IOk, IResult, IReturn, Parser, ParserOnce},
-    util::run_drop,
+    util::Consume,
 };
+use std::borrow::Cow;
 
 /**
 If the first argument is Some, return its value; if None, execute the parser of the second argument.
 # Example
 ```
-use chasa::char::prelude::*;
+use chasa::prelude::*;
 assert_eq!(pure_or(Some("first"), str("second").to("second")).parse_ok("second"), Some("first"));
 assert_eq!(pure_or(None, str("second").to("second")).parse_ok("second"), Some("second"))
 ```
 */
-pub fn pure_or<O, I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>>(
+pub fn pure_or<O, I: Input, Old, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, Old, E, C, S>>(
     o: Option<O>, p: P,
 ) -> Either<Pure<O>, P> {
     match o {
@@ -39,24 +44,31 @@ impl<P: Clone, O: Clone, Old> Clone for Value<P, O, Old> {
     }
 }
 impl<P: Copy, O: Copy, Old> Copy for Value<P, O, Old> {}
-impl<I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>, O> ParserOnce<I, O, C, S, M>
-    for Value<P, O, Output>
+impl<I: Input, Old, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, Old, E, C, S>, O> ParserOnce<I, O, E, C, S>
+    for Value<P, O, Old>
 {
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        self.0.run_once(cont).map(|(_, ok)| (self.1, ok))
+    fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {
+        self.0.run_once(args)?;
+        Some(self.1)
     }
 }
-impl<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>, O: Clone> Parser<I, O, C, S, M>
-    for Value<P, O, Output>
+impl<I: Input, Old, E: ParseError<I>, C, S: Clone, P: Parser<I, Old, E, C, S>, O: Clone> Parser<I, O, E, C, S>
+    for Value<P, O, Old>
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        self.0.run(cont).map(|(_, ok)| (self.1.clone(), ok))
+    fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
+        self.0.run(args)?;
+        Some(self.1.clone())
     }
 }
 
 /// Process parser results with functions.
+/// ```
+/// use chasa::prelude::*;
+/// let p = char('a').map(|c| {let mut str = String::new(); str.push(c); str});
+/// assert_eq!(p.parse_ok("aa"), Some("a".to_string()));
+/// ```
 pub struct Map<P, F, O>(pub(crate) P, pub(crate) F, pub(crate) PhantomData<fn() -> O>);
 impl<P: Clone, F: Clone, O> Clone for Map<P, F, O> {
     #[inline]
@@ -65,20 +77,20 @@ impl<P: Clone, F: Clone, O> Clone for Map<P, F, O> {
     }
 }
 impl<P: Copy, F: Copy, O> Copy for Map<P, F, O> {}
-impl<I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>, F: FnOnce(Output) -> O, O>
-    ParserOnce<I, O, C, S, M> for Map<P, F, Output>
+impl<I: Input, Old, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, Old, E, C, S>, F: FnOnce(Old) -> O, O>
+    ParserOnce<I, O, E, C, S> for Map<P, F, Old>
 {
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        self.0.run_once(cont).map(|(o, ok)| (self.1(o), ok))
+    fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {
+        self.0.run_once(args).map(self.1)
     }
 }
-impl<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>, F: Fn(Output) -> O, O> Parser<I, O, C, S, M>
-    for Map<P, F, Output>
+impl<I: Input, Old, E: ParseError<I>, C, S: Clone, P: Parser<I, Old, E, C, S>, F: Fn(Old) -> O, O> Parser<I, O, E, C, S>
+    for Map<P, F, Old>
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        self.0.run(cont).map(|(o, ok)| (self.1(o), ok))
+    fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
+        self.0.run(args).map(&mut self.1)
     }
 }
 
@@ -86,32 +98,44 @@ impl<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>, F: Fn(Output)
 Add "expecting [specified label]" to the parser error display.
 # Example
 ```
-use chasa::char::prelude::*;
-assert_eq!(char('a').label("special a").parse_easy("b"), Err("unexpected b, expecting special a at 0..1".to_string()));
+use chasa::prelude::*;
+assert_eq!(char('a').label("special a").parse_easy("b"), Err("error: unexpected b, expecting special a".to_string()));
 ```
 */
 #[derive(Clone, Copy)]
 pub struct Label<P, L>(pub(crate) P, pub(crate) L);
-impl<I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>, L: Display + 'static>
-    ParserOnce<I, Output, C, S, M> for Label<P, L>
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>, L> ParserOnce<I, O, E, C, S>
+    for Label<P, L>
+where
+    E::Message: From<error::Expected<error::Format<L>>>,
 {
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Output, I, S, M> {
-        if cont.ok.cutted {
-            (cont.drop)()
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O> {
+        match self.0.run_once(args.by_ref()) {
+            Some(c) => Some(c),
+            None => {
+                args.error.clear_expected();
+                args.error.set(error::expected(error::format(self.1)).into());
+                None
+            },
         }
-        self.0.run_once(cont).map_err(|e| e.label(self.1))
     }
 }
-impl<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>, L: Display + 'static + Clone>
-    Parser<I, Output, C, S, M> for Label<P, L>
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>, L: Clone> Parser<I, O, E, C, S>
+    for Label<P, L>
+where
+    E::Message: From<error::Expected<error::Format<L>>>,
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Output, I, S, M> {
-        if cont.ok.cutted {
-            (cont.drop)()
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O> {
+        match self.0.run(args.by_ref()) {
+            Some(c) => Some(c),
+            None => {
+                args.error.clear_expected();
+                args.error.set(error::expected(error::format(self.1.clone())).into());
+                None
+            },
         }
-        self.0.run(cont).map_err(|e| e.label(self.1.clone()))
     }
 }
 
@@ -119,26 +143,44 @@ impl<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>, L: Display + 
 Add "expecting [specified label]" to the parser error display. The label will be evaluated lazily.
 # Example
 ```
-use chasa::char::prelude::*;
-assert_eq!(char('a').label_with(||"special a").parse_easy("b"), Err("unexpected b, expecting special a at 0..1".to_string()));
+use chasa::prelude::*;
+assert_eq!(char('a').label_with(||"special a").parse_easy("b"), Err("error: unexpected b, expecting special a".to_string()));
 ```
 */
 #[derive(Clone, Copy)]
 pub struct LabelWith<P, F>(pub(crate) P, pub(crate) F);
-impl<I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>, L: Display, F: Fn() -> L + 'static>
-    ParserOnce<I, Output, C, S, M> for LabelWith<P, F>
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>, L, F: FnOnce() -> L>
+    ParserOnce<I, O, E, C, S> for LabelWith<P, F>
+where
+    E::Message: From<error::Expected<error::Format<L>>>,
 {
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Output, I, S, M> {
-        self.0.run_once(cont).map_err(|e| e.label_with(self.1))
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O> {
+        match self.0.run_once(args.by_ref()) {
+            Some(c) => Some(c),
+            None => {
+                args.error.clear_expected();
+                args.error.set(error::expected(error::format(self.1())).into());
+                None
+            },
+        }
     }
 }
-impl<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>, L: Display, F: Fn() -> L + 'static + Clone>
-    Parser<I, Output, C, S, M> for LabelWith<P, F>
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>, L, F: FnMut() -> L> Parser<I, O, E, C, S>
+    for LabelWith<P, F>
+where
+    E::Message: From<error::Expected<error::Format<L>>>,
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Output, I, S, M> {
-        self.0.run(cont).map_err(|e| e.label_with(self.1.clone()))
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O> {
+        match self.0.run(args.by_ref()) {
+            Some(c) => Some(c),
+            None => {
+                args.error.clear_expected();
+                args.error.set(error::expected(error::format(self.1())).into());
+                None
+            },
+        }
     }
 }
 
@@ -146,7 +188,7 @@ impl<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>, L: Display, F
 Execute the next parser generated by accepting the result of the parser. If either of them fails, the whole thing will fail.
 # Example
 ```
-use chasa::char::prelude::*;
+use chasa::prelude::*;
 assert_eq!(any.bind(|c| char(c)).parse_ok("aa"), Some('a'));
 assert_eq!(char('b').bind(|_| char('a')).parse_ok("aa"), None);
 assert_eq!(any.bind(|c| char(c)).parse_ok("ab"), None);
@@ -163,278 +205,77 @@ impl<P: Copy, F: Copy, O1> Copy for Bind<P, F, O1> {}
 
 impl<
         I: Input,
-        Output1,
-        Output2,
+        O1,
+        O2,
+        E: ParseError<I>,
         C,
-        S,
-        M: Cb,
-        P1: ParserOnce<I, Output1, C, S, M>,
-        P2: ParserOnce<I, Output2, C, S, M>,
-        F: FnOnce(Output1) -> P2,
-    > ParserOnce<I, Output2, C, S, M> for Bind<P1, F, Output1>
+        S: Clone,
+        P1: ParserOnce<I, O1, E, C, S>,
+        P2: ParserOnce<I, O2, E, C, S>,
+        F: FnOnce(O1) -> P2,
+    > ParserOnce<I, O2, E, C, S> for Bind<P1, F, O1>
 {
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Output2, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        self.0.run_once(ICont { ok, config, drop }).and_then(|(o, ok)| self.1(o).run_once(ok.to_cont(config, drop)))
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O2> {
+        self.1(self.0.run_once(args.by_ref())?).run_once(args)
     }
 }
 impl<
         I: Input,
-        Output1,
-        Output2,
+        O1,
+        O2,
+        E: ParseError<I>,
         C,
-        S,
-        M: Cb,
-        P1: Parser<I, Output1, C, S, M>,
-        P2: ParserOnce<I, Output2, C, S, M>,
-        F: Fn(Output1) -> P2,
-    > Parser<I, Output2, C, S, M> for Bind<P1, F, Output1>
+        S: Clone,
+        P1: Parser<I, O1, E, C, S>,
+        P2: ParserOnce<I, O2, E, C, S>,
+        F: FnMut(O1) -> P2,
+    > Parser<I, O2, E, C, S> for Bind<P1, F, O1>
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Output2, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        self.0.run(ICont { ok, config, drop }).and_then(|(o, ok)| self.1(o).run_once(ok.to_cont(config, drop)))
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O2> {
+        self.1(self.0.run(args.by_ref())?).run_once(args)
     }
 }
 
 /// Execute the two parsers in succession and return them as tuples.
 /// # Example
 /// ```
-/// use chasa::char::prelude::*;
+/// use chasa::prelude::*;
 /// assert_eq!(any.and(any).parse_ok("aa"), Some(('a','a')))
 /// ```
 #[derive(Clone, Copy)]
 pub struct And<P1, P2>(pub(crate) P1, pub(crate) P2);
 impl<
         I: Input,
-        Output1,
-        Output2,
+        O1,
+        O2,
+        E: ParseError<I>,
         C,
-        S,
-        M: Cb,
-        P1: ParserOnce<I, Output1, C, S, M>,
-        P2: ParserOnce<I, Output2, C, S, M>,
-    > ParserOnce<I, (Output1, Output2), C, S, M> for And<P1, P2>
+        S: Clone,
+        P1: ParserOnce<I, O1, E, C, S>,
+        P2: ParserOnce<I, O2, E, C, S>,
+    > ParserOnce<I, (O1, O2), E, C, S> for And<P1, P2>
 {
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<(Output1, Output2), I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        self.0
-            .run_once(ICont { ok, config, drop })
-            .and_then(|(o1, ok)| self.1.run_once(ok.to_cont(config, drop)).map(|(o2, ok)| ((o1, o2), ok)))
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<(O1, O2)> {
+        Some((self.0.run_once(args.by_ref())?, self.1.run_once(args)?))
     }
 }
-impl<I: Input, Output1, Output2, C, S, M: Cb, P1: Parser<I, Output1, C, S, M>, P2: Parser<I, Output2, C, S, M>>
-    Parser<I, (Output1, Output2), C, S, M> for And<P1, P2>
+impl<I: Input, O1, O2, E: ParseError<I>, C, S: Clone, P1: Parser<I, O1, E, C, S>, P2: Parser<I, O2, E, C, S>>
+    Parser<I, (O1, O2), E, C, S> for And<P1, P2>
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<(Output1, Output2), I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        self.0
-            .run(ICont { ok, config, drop })
-            .and_then(|(o1, ok)| self.1.run(ok.to_cont(config, drop)).map(|(o2, ok)| ((o1, o2), ok)))
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<(O1, O2)> {
+        Some((self.0.run(args.by_ref())?, self.1.run(args)?))
     }
 }
-
-/**
-The parsers in the tuple are invoked in turn, and if all succeed, their contents are returned as a tuple.
-# Example
-```
-use chasa::char::prelude::*;
-let p = tuple((char('a'), char('b'), char('c')));
-assert_eq!(p.parse_ok("abc"), Some(('a','b','c')));
-assert_eq!(p.parse_ok("abd"), None);
-```
-*/
-#[derive(Clone, Copy)]
-pub struct Chain<PS>(PS);
-#[inline]
-pub fn tuple<PS>(parsers: PS) -> Chain<PS> {
-    Chain(parsers)
-}
-macro_rules! chain_derive {
-    () => {};
-    (($p:ident,$pt:ident,$o:ident,$ot:ident)) => {
-        impl<I: Input,$ot, C, S, M: Cb, $pt: ParserOnce<I, $ot, C, S, M>> ParserOnce<I, $ot, C, S, M> for Chain<($pt,)> {
-            #[inline]
-            fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<$ot, I, S, M> {
-                self.0.0.run_once(cont)
-            }
-        }
-        impl<I: Input,$ot, C, S, M: Cb, $pt: Parser<I, $ot, C, S, M>> Parser<I, $ot, C, S, M> for Chain<($pt,)> {
-            #[inline]
-            fn run(&self, cont: ICont<I, C, S, M>) -> IResult<$ot, I, S, M> {
-                self.0.0.run(cont)
-            }
-        }
-    };
-    (($p1:ident,$p1t:ident,$o1:ident,$o1t:ident),$(($ps:ident,$pst:ident,$os:ident,$ost:ident)),+) => {
-        impl<I:Input,$o1t,$($ost),+,C,S,M:Cb,$p1t:ParserOnce<I,$o1t,C,S,M>,$($pst:ParserOnce<I,$ost,C,S,M>),+> ParserOnce<I,($o1t,$($ost),+),C,S,M> for Chain<($p1t,$($pst),+)> {
-            #[inline] fn run_once(self, cont:ICont<I,C,S,M>) -> IResult<($o1t,$($ost),+),I,S,M> {
-                let ICont { ok, config, drop } = cont;
-                let ($p1,$($ps),+) = self.0;
-                let ($o1, ok) = $p1.run_once(ICont { ok, config, drop })?;
-                $(let ($os, ok) = $ps.run_once(ICont { ok, config, drop })?;)+
-                Ok((($o1,$($os),+), ok))
-            }
-        }
-        impl<I:Input,$o1t,$($ost),+,C,S,M:Cb,$p1t:Parser<I,$o1t,C,S,M>,$($pst:Parser<I,$ost,C,S,M>),+> Parser<I,($o1t,$($ost),+),C,S,M> for Chain<($p1t,$($pst),+)> {
-            #[inline] fn run(&self, cont:ICont<I,C,S,M>) -> IResult<($o1t,$($ost),+),I,S,M> {
-                let ICont { ok, config, drop } = cont;
-                let ($p1,$($ps),+) = &self.0;
-                let ($o1, ok) = $p1.run(ICont { ok, config, drop })?;
-                $(let ($os, ok) = $ps.run(ICont { ok, config, drop })?;)+
-                Ok((($o1,$($os),+), ok))
-            }
-        }
-        chain_derive!($(($ps,$pst,$os,$ost)),+);
-    }
-}
-chain_derive!(
-    (p1, P1, o1, O1),
-    (p2, P2, o2, O2),
-    (p3, P3, o3, O3),
-    (p4, P4, o4, O4),
-    (p5, P5, o5, O5),
-    (p6, P6, o6, O6),
-    (p7, P7, o7, O7),
-    (p8, P8, o8, O8),
-    (p9, P9, o9, O9),
-    (p10, P10, o10, O10),
-    (p11, P11, o11, O11),
-    (p12, P12, o12, O12),
-    (p13, P13, o13, O13),
-    (p14, P14, o14, O14),
-    (p15, P15, o15, O15),
-    (p16, P16, o16, O16),
-    (p17, P17, o17, O17),
-    (p18, P18, o18, O18),
-    (p19, P19, o19, O19),
-    (p20, P20, o20, O20),
-    (p21, P21, o21, O21),
-    (p22, P22, o22, O22),
-    (p23, P23, o23, O23),
-    (p24, P24, o24, O24),
-    (p25, P25, o25, O25),
-    (p26, P26, o26, O26),
-    (p27, P27, o27, O27),
-    (p28, P28, o28, O28),
-    (p29, P29, o29, O29),
-    (p30, P30, o30, O30)
-);
-
-/**
- * The parsers in the tuple are invoked in turn and only the last result is returned if all succeed.
-# Example
-```
-use chasa::char::prelude::*;
-let p = chain((char('a'), char('b'), char('c')));
-assert_eq!(p.parse_ok("abc"), Some('c'));
-assert_eq!(p.parse_ok("abd"), None);
-```
-*/
-pub struct ChainRight<Ps, Os>(Ps, PhantomData<fn() -> Os>);
-#[inline]
-pub fn chain<Ps, Os>(parsers: Ps) -> ChainRight<Ps, Os> {
-    ChainRight(parsers, PhantomData)
-}
-#[inline]
-pub fn skip_chain<Ps, Os, O2>(parsers: Ps) -> Value<ChainRight<Ps, Os>, (), O2> {
-    Value(ChainRight(parsers, PhantomData), (), PhantomData)
-}
-impl<Ps: Clone, Os> Clone for ChainRight<Ps, Os> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self(self.0.clone(), PhantomData)
-    }
-}
-impl<Ps: Copy, Os> Copy for ChainRight<Ps, Os> {}
-macro_rules! last {
-    ($id:ident) => ($id);
-    ($id:ident, $($ids:ident),+) => (last!($($ids),+));
-}
-macro_rules! chain_right_run {
-    ($run:ident,$ok:ident,$config:ident,$drop:ident,$p:ident) => {
-        return $p.$run(ICont { ok:$ok, config:$config, drop:$drop });
-    };
-    ($run:ident,$ok:ident,$config:ident,$drop:ident,$p1:ident,$($ps:ident),+) => {
-        let (_,$ok) = $p1.$run(ICont { ok:$ok, config:$config, drop:$drop })?;
-        chain_right_run!($run,$ok,$config,$drop,$($ps),+);
-    }
-}
-macro_rules! chain_right_derive {
-    () => {};
-    (($p:ident,$pt:ident,$ot:ident)) => {
-        impl<I: Input,$ot, C, S, M: Cb, $pt: ParserOnce<I, $ot, C, S, M>> ParserOnce<I, $ot, C, S, M> for ChainRight<($pt,),()> {
-            #[inline]
-            fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<$ot, I, S, M> {
-                self.0.0.run_once(cont)
-            }
-        }
-        impl<I: Input,$ot, C, S, M: Cb, $pt: Parser<I, $ot, C, S, M>> Parser<I, $ot, C, S, M> for ChainRight<($pt,),()> {
-            #[inline]
-            fn run(&self, cont: ICont<I, C, S, M>) -> IResult<$ot, I, S, M> {
-                self.0.0.run(cont)
-            }
-        }
-    };
-    (($p1:ident,$p1t:ident,$o1t:ident),$(($ps:ident,$pst:ident,$ost:ident)),+) => {
-        impl<I:Input,$o1t,$($ost),+,C,S,M:Cb,$p1t:ParserOnce<I,$o1t,C,S,M>,$($pst:ParserOnce<I,$ost,C,S,M>),+> ParserOnce<I,last!($($ost),+),C,S,M> for ChainRight<($p1t,$($pst),+),($o1t,$($ost),+)> {
-            #[inline] fn run_once(self, cont:ICont<I,C,S,M>) -> IResult<last!($($ost),+),I,S,M> {
-                let ICont { ok, config, drop } = cont;
-                let ($p1,$($ps),+) = self.0;
-                chain_right_run!(run_once,ok,config,drop,$p1,$($ps),+);
-            }
-        }
-        impl<I:Input,$o1t,$($ost),+,C,S,M:Cb,$p1t:Parser<I,$o1t,C,S,M>,$($pst:Parser<I,$ost,C,S,M>),+> Parser<I,last!($($ost),+),C,S,M> for ChainRight<($p1t,$($pst),+),($o1t,$($ost),+)> {
-            #[inline] fn run(&self, cont:ICont<I,C,S,M>) -> IResult<last!($($ost),+),I,S,M> {
-                let ICont { ok, config, drop } = cont;
-                let ($p1,$($ps),+) = &self.0;
-                chain_right_run!(run,ok,config,drop,$p1,$($ps),+);
-            }
-        }
-        chain_right_derive!($(($ps,$pst,$ost)),+);
-    }
-}
-chain_right_derive!(
-    (p1, P1, O1),
-    (p2, P2, O2),
-    (p3, P3, O3),
-    (p4, P4, O4),
-    (p5, P5, O5),
-    (p6, P6, O6),
-    (p7, P7, O7),
-    (p8, P8, O8),
-    (p9, P9, O9),
-    (p10, P10, O10),
-    (p11, P11, O11),
-    (p12, P12, O12),
-    (p13, P13, O13),
-    (p14, P14, O14),
-    (p15, P15, O15),
-    (p16, P16, O16),
-    (p17, P17, O17),
-    (p18, P18, O18),
-    (p19, P19, O19),
-    (p20, P20, O20),
-    (p21, P21, O21),
-    (p22, P22, O22),
-    (p23, P23, O23),
-    (p24, P24, O24),
-    (p25, P25, O25),
-    (p26, P26, O26),
-    (p27, P27, O27),
-    (p28, P28, O28),
-    (p29, P29, O29),
-    (p30, P30, O30)
-);
 
 /**
 Runs two parsers in succession, returning only the first value. If either of them fails, the whole thing will fail.
 # Example
 ```
-use chasa::char::prelude::*;
+use chasa::prelude::*;
 assert_eq!(any.left(any).parse_ok("ab"), Some('a'));
 assert_eq!(any.left(char('a')).parse_ok("ab"), None);
 assert_eq!(str("chasa").to( ()).left(char(':')).parse_ok("chasa: parser combinator"), Some(()));
@@ -448,45 +289,42 @@ impl<P1: Clone, P2: Clone, O2> Clone for Left<P1, P2, O2> {
     }
 }
 impl<P1: Copy, P2: Copy, O2> Copy for Left<P1, P2, O2> {}
-
 impl<
         I: Input,
-        Output1,
-        Output2,
+        O1,
+        O2,
+        E: ParseError<I>,
         C,
-        S,
-        M: Cb,
-        P1: ParserOnce<I, Output1, C, S, M>,
-        P2: ParserOnce<I, Output2, C, S, M>,
-    > ParserOnce<I, Output1, C, S, M> for Left<P1, P2, Output2>
+        S: Clone,
+        P1: ParserOnce<I, O1, E, C, S>,
+        P2: ParserOnce<I, O2, E, C, S>,
+    > ParserOnce<I, O1, E, C, S> for Left<P1, P2, O2>
 {
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Output1, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        self.0
-            .run_once(ICont { ok, config, drop })
-            .and_then(|(o, ok)| self.1.run_once(ok.to_cont(config, drop)).map(|(_, ok)| (o, ok)))
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O1> {
+        let left = self.0.run_once(args.by_ref());
+        self.1.run_once(args)?;
+        left
     }
 }
-impl<I: Input, Output1, Output2, C, S, M: Cb, P1: Parser<I, Output1, C, S, M>, P2: Parser<I, Output2, C, S, M>>
-    Parser<I, Output1, C, S, M> for Left<P1, P2, Output2>
+impl<I: Input, O1, O2, E: ParseError<I>, C, S: Clone, P1: Parser<I, O1, E, C, S>, P2: Parser<I, O2, E, C, S>>
+    Parser<I, O1, E, C, S> for Left<P1, P2, O2>
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Output1, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        self.0
-            .run(ICont { ok, config, drop })
-            .and_then(|(o, ok)| self.1.run(ok.to_cont(config, drop)).map(|(_, ok)| (o, ok)))
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O1> {
+        let left = self.0.run(args.by_ref());
+        self.1.run(args)?;
+        left
     }
 }
 
 /// Runs two parsers in succession, returning only the second value. If either of them fails, the whole thing will fail.
 /// # Example
 /// ```
-/// use chasa::char::prelude::*;
+/// use chasa::prelude::*;
 /// assert_eq!(any.right(any).parse_ok("ab"), Some('b'));
 /// assert_eq!(char('b').right(any).parse_ok("ab"), None);
-/// assert_eq!(ws.right(str("chasa").to( ())).parse_ok("   chasa"), Some(()));
+/// assert_eq!(char('b').right(str("chasa").to( ())).parse_ok("bchasa"), Some(()));
 /// ```
 pub struct Right<P1, P2, O1>(pub(crate) P1, pub(crate) P2, pub(crate) PhantomData<O1>);
 impl<P1: Clone, P2: Clone, O1> Clone for Right<P1, P2, O1> {
@@ -498,34 +336,35 @@ impl<P1: Clone, P2: Clone, O1> Clone for Right<P1, P2, O1> {
 impl<P1: Copy, P2: Copy, O1> Copy for Right<P1, P2, O1> {}
 impl<
         I: Input,
-        Output1,
-        Output2,
+        O1,
+        O2,
+        E: ParseError<I>,
         C,
-        S,
-        M: Cb,
-        P1: ParserOnce<I, Output1, C, S, M>,
-        P2: ParserOnce<I, Output2, C, S, M>,
-    > ParserOnce<I, Output2, C, S, M> for Right<P1, P2, Output1>
+        S: Clone,
+        P1: ParserOnce<I, O1, E, C, S>,
+        P2: ParserOnce<I, O2, E, C, S>,
+    > ParserOnce<I, O2, E, C, S> for Right<P1, P2, O1>
 {
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Output2, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        self.0.run_once(ICont { ok, config, drop }).and_then(|(_, ok)| self.1.run_once(ok.to_cont(config, drop)))
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O2> {
+        self.0.run_once(args.by_ref())?;
+        self.1.run_once(args)
     }
 }
-impl<I: Input, Output1, Output2, C, S, M: Cb, P1: Parser<I, Output1, C, S, M>, P2: Parser<I, Output2, C, S, M>>
-    Parser<I, Output2, C, S, M> for Right<P1, P2, Output1>
+impl<I: Input, O1, O2, E: ParseError<I>, C, S: Clone, P1: Parser<I, O1, E, C, S>, P2: Parser<I, O2, E, C, S>>
+    Parser<I, O2, E, C, S> for Right<P1, P2, O1>
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Output2, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        self.0.run(ICont { ok, config, drop }).and_then(|(_, ok)| self.1.run(ok.to_cont(config, drop)))
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O2> {
+        self.0.run(args.by_ref())?;
+        self.1.run(args)
     }
 }
+
 /// Place the parser between two parsers. The results at both ends will be ignored.
 /// # Example
 /// ```
-/// use chasa::char::prelude::*;
+/// use chasa::prelude::*;
 /// assert_eq!(any.between(char('('), char(')')).parse_ok("(a)"), Some('a'));
 /// assert_eq!(char('a').between(char('('), char(')')).parse_ok("(a"), None);
 /// ```
@@ -544,57 +383,155 @@ impl<P1: Clone, P2: Clone, P3: Clone, O1, O3> Clone for Between<P1, P2, P3, O1, 
 impl<P1: Copy, P2: Copy, P3: Copy, O1, O3> Copy for Between<P1, P2, P3, O1, O3> {}
 impl<
         I: Input,
-        Output1,
-        Output2,
-        Output3,
+        O1,
+        O2,
+        O3,
+        E: ParseError<I>,
         C,
-        S,
-        M: Cb,
-        P1: ParserOnce<I, Output1, C, S, M>,
-        P2: ParserOnce<I, Output2, C, S, M>,
-        P3: ParserOnce<I, Output3, C, S, M>,
-    > ParserOnce<I, Output2, C, S, M> for Between<P1, P2, P3, Output1, Output3>
+        S: Clone,
+        P1: ParserOnce<I, O1, E, C, S>,
+        P2: ParserOnce<I, O2, E, C, S>,
+        P3: ParserOnce<I, O3, E, C, S>,
+    > ParserOnce<I, O2, E, C, S> for Between<P1, P2, P3, O1, O3>
 {
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Output2, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        self.0.run_once(ICont { ok, config, drop }).and_then(|(_, ok)| {
-            self.1
-                .run_once(ok.to_cont(config, drop))
-                .and_then(|(o, ok)| self.2.run_once(ok.to_cont(config, drop)).map(|(_, ok)| (o, ok)))
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O2> {
+        self.0.run_once(args.by_ref())?;
+        let center = self.1.run_once(args.by_ref());
+        self.2.run_once(args)?;
+        center
+    }
+}
+impl<
+        I: Input,
+        O1,
+        O2,
+        O3,
+        E: ParseError<I>,
+        C,
+        S: Clone,
+        P1: Parser<I, O1, E, C, S>,
+        P2: Parser<I, O2, E, C, S>,
+        P3: Parser<I, O3, E, C, S>,
+    > Parser<I, O2, E, C, S> for Between<P1, P2, P3, O1, O3>
+{
+    #[inline]
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O2> {
+        self.0.run(args.by_ref())?;
+        let center = self.1.run(args.by_ref());
+        self.2.run(args)?;
+        center
+    }
+}
+
+/**
+Sift through the parser results. If a token is sifted out, it does not consume input.
+# Example
+```
+use chasa::prelude::*;
+let p = any.and_then(|c| match c {
+    'a' => Ok(true),
+    _ => Err(message(format("hello")))
+});
+assert_eq!(p.parse_ok("abc"), Some(true));
+assert_eq!(p.parse_easy("cba"), Err("error: hello".to_string()));
+```
+*/
+pub struct AndThen<P, F, M, O>(pub(crate) P, pub(crate) F, pub(crate) PhantomData<fn() -> (O, M)>);
+impl<P: Clone, F: Clone, M, O> Clone for AndThen<P, F, M, O> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone(), PhantomData)
+    }
+}
+impl<P: Copy, F: Copy, M, O> Copy for AndThen<P, F, M, O> {}
+impl<
+        I: Input,
+        O1,
+        O2,
+        E: ParseError<I>,
+        C,
+        S: Clone,
+        P: ParserOnce<I, O1, E, C, S>,
+        F: FnOnce(O1) -> Result<O2, M>,
+        M: Into<E::Message>,
+    > ParserOnce<I, O2, E, C, S> for AndThen<P, F, M, O1>
+{
+    #[inline(always)]
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O2> {
+        let start = args.input.position();
+        self.0.run_once(args.by_ref()).and_then(|o| match self.1(o) {
+            Ok(o) => Some(o),
+            Err(m) => {
+                let end = args.input.position();
+                if args.error.add(Some(start), end) {
+                    args.error.set(m.into());
+                }
+                None
+            },
         })
     }
 }
 impl<
         I: Input,
-        Output1,
-        Output2,
-        Output3,
+        O1,
+        O2,
+        E: ParseError<I>,
         C,
-        S,
-        M: Cb,
-        P1: Parser<I, Output1, C, S, M>,
-        P2: Parser<I, Output2, C, S, M>,
-        P3: Parser<I, Output3, C, S, M>,
-    > Parser<I, Output2, C, S, M> for Between<P1, P2, P3, Output1, Output3>
+        S: Clone,
+        P: Parser<I, O1, E, C, S>,
+        F: FnMut(O1) -> Result<O2, M>,
+        M: Into<E::Message>,
+    > Parser<I, O2, E, C, S> for AndThen<P, F, M, O1>
 {
-    #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Output2, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        self.0.run(ICont { ok, config, drop }).and_then(|(_, ok)| {
-            self.1
-                .run(ok.to_cont(config, drop))
-                .and_then(|(o, ok)| self.2.run(ok.to_cont(config, drop)).map(|(_, ok)| (o, ok)))
+    #[inline(always)]
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O2> {
+        let start = args.input.position();
+        self.0.run(args.by_ref()).and_then(|o| match self.1(o) {
+            Ok(o) => Some(o),
+            Err(m) => {
+                let end = args.input.position();
+                if args.error.add(Some(start), end) {
+                    args.error.set(m.into());
+                }
+                None
+            },
         })
     }
 }
+// impl<I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>, O, F: FnOnce(Output) -> Result<O, Eb<M>>>
+//     ParserOnce<I, O, C, S, M> for AndThen<P, F, Output>
+// {
+//     #[inline]
+//     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+//         let ICont { ok, config, drop } = cont;
+//         let pos = ok.input.pos();
+//         self.0.run_once(ICont { ok, config, drop }).and_then(|(o, ok)| match self.1(o) {
+//             Ok(o) => Ok((o, ok)),
+//             Err(err) => Err(err.at::<I>(ok.input.index(), pos, Some(ok.input.pos())).or_merge(ok.err)),
+//         })
+//     }
+// }
+// impl<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>, O, F: Fn(Output) -> Result<O, Eb<M>>>
+//     Parser<I, O, C, S, M> for AndThen<P, F, Output>
+// {
+//     #[inline]
+//     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
+//         let ICont { ok, config, drop } = cont;
+//         let pos = ok.input.pos();
+//         self.0.run(ICont { ok, config, drop }).and_then(|(o, ok)| match self.1(o) {
+//             Ok(o) => Ok((o, ok)),
+//             Err(err) => Err(err.at::<I>(ok.input.index(), pos, Some(ok.input.pos())).or_merge(ok.err)),
+//         })
+//     }
+// }
 
 /// Pass a value to chain the parser together with the parser result, and let the parser continue.
 /// Even if `bind` returns a lot of parsers of different types, `case` does not need to use `Either` artificially
 /// # Example
 /// ```
-/// use chasa::char::prelude::*;
-/// fn parser<I:Input>() -> impl Pat<I,usize> {
+/// use chasa::prelude::*;
+/// fn parser<'a>() -> impl Parser<&'a str,usize> {
 ///     one_of("abc").case(|char, k| match char {
 ///         'a' => k.to(10),
 ///         'b' => k.then(parser).and(parser).map(|(a,b)| a + b),
@@ -607,98 +544,44 @@ impl<
 /// assert_eq!(parser.parse_ok("bcabacca"), Some(30));
 /// assert_eq!(parser.parse_ok("ba"), None);
 /// ```
-pub struct Case<P, F, O>(pub(crate) P, pub(crate) F, pub(crate) PhantomData<fn() -> O>);
-impl<P: Clone, F: Clone, O> Clone for Case<P, F, O> {
+pub struct Case<P, F, O, E>(pub(crate) P, pub(crate) F, pub(crate) PhantomData<fn() -> (O, E)>);
+impl<P: Clone, F: Clone, O, E> Clone for Case<P, F, O, E> {
     #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone(), PhantomData)
     }
 }
-impl<P: Copy, F: Copy, O> Copy for Case<P, F, O> {}
+impl<P: Copy, F: Copy, O, E> Copy for Case<P, F, O, E> {}
 impl<
         I: Input,
-        Output,
+        O1,
+        O2,
+        E: ParseError<I>,
         C,
-        S,
-        M: Cb,
-        P: ParserOnce<I, Output, C, S, M>,
-        O,
-        F: FnOnce(Output, ICont<I, C, S, M>) -> IReturn<O, I, C, S, M>,
-    > ParserOnce<I, O, C, S, M> for Case<P, F, Output>
+        S: Clone,
+        P: ParserOnce<I, O1, E, C, S>,
+        F: for<'a, 'b> FnOnce(O1, Args<'a, 'b, I, E, C, S>) -> Cont<'a, 'b, I, O2, E, C, S>,
+    > ParserOnce<I, O2, E, C, S> for Case<P, F, O1, E>
 {
-    #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        self.0
-            .run_once(ICont { ok, config, drop })
-            .and_then(|(o, ok)| self.1(o, ok.to_cont(config, drop)).0.map(|(o, k)| (o, k.ok)))
+    #[inline(always)]
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O2> {
+        Some(self.1(self.0.run_once(args.by_ref())?, args).0?.0)
     }
 }
 impl<
         I: Input,
-        Output,
+        O1,
+        O2,
+        E: ParseError<I>,
         C,
-        S,
-        M: Cb,
-        P: Parser<I, Output, C, S, M>,
-        O,
-        F: Fn(Output, ICont<I, C, S, M>) -> IReturn<O, I, C, S, M>,
-    > Parser<I, O, C, S, M> for Case<P, F, Output>
+        S: Clone,
+        P: Parser<I, O1, E, C, S>,
+        F: for<'a, 'b> FnMut(O1, Args<'a, 'b, I, E, C, S>) -> Cont<'a, 'b, I, O2, E, C, S>,
+    > Parser<I, O2, E, C, S> for Case<P, F, O1, E>
 {
-    #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        self.0
-            .run(ICont { ok, config, drop })
-            .and_then(|(o, ok)| self.1(o, ok.to_cont(config, drop)).0.map(|(o, k)| (o, k.ok)))
-    }
-}
-
-/**
-Sift through the parser results. If a token is sifted out, it does not consume input.
-# Example
-```
-use chasa::char::prelude::*;
-let p = any.and_then(|c| match c {
-    'a' => Ok(true),
-    _ => Err(message("hello"))
-});
-assert_eq!(p.parse_ok("abc"), Some(true));
-assert_eq!(p.parse_easy("cba"), Err("hello at 0..1".to_string()));
-```
-*/
-pub struct AndThen<P, F, O>(pub(crate) P, pub(crate) F, pub(crate) PhantomData<fn() -> O>);
-impl<P: Clone, F: Clone, O> Clone for AndThen<P, F, O> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1.clone(), PhantomData)
-    }
-}
-impl<P: Copy, F: Copy, O> Copy for AndThen<P, F, O> {}
-impl<I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>, O, F: FnOnce(Output) -> Result<O, Eb<M>>>
-    ParserOnce<I, O, C, S, M> for AndThen<P, F, Output>
-{
-    #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        let pos = ok.input.pos();
-        self.0.run_once(ICont { ok, config, drop }).and_then(|(o, ok)| match self.1(o) {
-            Ok(o) => Ok((o, ok)),
-            Err(err) => Err(err.at::<I>(ok.input.index(), pos, Some(ok.input.pos())).or_merge(ok.err)),
-        })
-    }
-}
-impl<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>, O, F: Fn(Output) -> Result<O, Eb<M>>>
-    Parser<I, O, C, S, M> for AndThen<P, F, Output>
-{
-    #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        let pos = ok.input.pos();
-        self.0.run(ICont { ok, config, drop }).and_then(|(o, ok)| match self.1(o) {
-            Ok(o) => Ok((o, ok)),
-            Err(err) => Err(err.at::<I>(ok.input.index(), pos, Some(ok.input.pos())).or_merge(ok.err)),
-        })
+    #[inline(always)]
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O2> {
+        Some(self.1(self.0.run(args.by_ref())?, args).0?.0)
     }
 }
 
@@ -707,7 +590,7 @@ impl<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>, O, F: Fn(Outp
 /// See also [`Cut`] for input consumption.
 /// # Example
 /// ```
-/// use chasa::char::prelude::*;
+/// use chasa::prelude::*;
 /// assert_eq!(char('a').or(char('b')).parse_ok("aa"), Some('a'));
 /// assert_eq!(char('a').or(char('b')).parse_ok("bb"), Some('b'));
 /// assert_eq!(char('a').right(char('b')).or(char('b').right(char('b'))).parse_ok("bb"), Some('b'));
@@ -715,168 +598,49 @@ impl<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>, O, F: Fn(Outp
 /// ```
 #[derive(Clone, Copy)]
 pub struct Or<P1, P2>(pub(crate) P1, pub(crate) P2);
-impl<I: Input, Output, C, S: Clone, M: Cb, P1: ParserOnce<I, Output, C, S, M>, P2: ParserOnce<I, Output, C, S, M>>
-    ParserOnce<I, Output, C, S, M> for Or<P1, P2>
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P1: ParserOnce<I, O, E, C, S>, P2: ParserOnce<I, O, E, C, S>>
+    ParserOnce<I, O, E, C, S> for Or<P1, P2>
 {
-    #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Output, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        if ok.cutted {
-            drop()
-        }
-        let (input, state, cutted) = (ok.input.clone(), ok.state.clone(), ok.cutted);
-        match run_drop(self.0, ICont { ok, config, drop }, (input, state)) {
-            (Ok((o, ok)), _) => Ok((o, ok)),
-            (Err(e), None) => Err(e),
-            (Err(e), Some((input, state))) => {
-                self.1.run_once(IOk { input, state, err: Some(e), cutted }.to_cont(config, drop))
+    #[inline(always)]
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O> {
+        let Args { input, config, state, consume, error } = args.by_ref();
+        match consume.cons((input.clone(), state.clone()), |consume| {
+            self.0.run_once(Args { input, config, state, consume, error })
+        }) {
+            (None, None) => None,
+            (Some(o), _) => Some(o),
+            (None, Some((input_bak, state_bak))) => {
+                *input = input_bak;
+                *state = state_bak;
+                self.1.run_once(Args { input, config, state, consume, error })
             },
         }
     }
 }
-impl<I: Input, Output, C, S: Clone, M: Cb, P1: Parser<I, Output, C, S, M>, P2: Parser<I, Output, C, S, M>>
-    Parser<I, Output, C, S, M> for Or<P1, P2>
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P1: Parser<I, O, E, C, S>, P2: Parser<I, O, E, C, S>>
+    Parser<I, O, E, C, S> for Or<P1, P2>
 {
-    #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Output, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        if ok.cutted {
-            drop()
-        }
-        let (input, state, cutted) = (ok.input.clone(), ok.state.clone(), ok.cutted);
-        match run_drop(self.0.to_ref(), ICont { ok, config, drop }, (input, state)) {
-            (Ok((o, ok)), _) => Ok((o, ok)),
-            (Err(e), None) => Err(e),
-            (Err(e), Some((input, state))) => {
-                self.1.run(IOk { input, state, err: Some(e), cutted }.to_cont(config, drop))
+    #[inline(always)]
+    fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
+        let Args { input, config, state, consume, error } = args;
+        match consume
+            .cons((input.clone(), state.clone()), |consume| self.0.run(Args { input, config, state, consume, error }))
+        {
+            (None, None) => None,
+            (Some(o), _) => Some(o),
+            (None, Some((input_bak, state_bak))) => {
+                *input = input_bak;
+                *state = state_bak;
+                self.1.run(Args { input, config, state, consume, error })
             },
         }
     }
 }
-
-/**
-Try several parsers in sequence, which may result in fewer input,state clones than or's chain.
-# Example
-```
-use chasa::char::prelude::*;
-let p = choice((str("123").to(1), str("456").to(2), str("789").to(3)));
-assert_eq!(p.parse_ok("123"), Some(1));
-assert_eq!(p.parse_ok("456"), Some(2));
-```
-*/
-#[derive(Clone, Copy)]
-pub struct Choice<PS>(PS);
-#[inline]
-pub fn choice<PS>(parsers: PS) -> Choice<PS> {
-    Choice(parsers)
-}
-macro_rules! choice_derive {
-    () => ();
-    (($p:ident,$pt:ident)) => {
-        impl<I:Input,O,C,S:Clone,M:Cb,$pt:ParserOnce<I,O,C,S,M>> ParserOnce<I,O,C,S,M> for Choice<($pt,)> {
-            #[inline]
-            fn run_once(self, cont: ICont<I,C,S,M>) -> IResult<O,I,S,M> {
-                self.0.0.run_once(cont)
-            }
-        }
-        impl<I:Input,O,C,S:Clone,M:Cb,$pt:Parser<I,O,C,S,M>> Parser<I,O,C,S,M> for Choice<($pt,)> {
-            #[inline]
-            fn run(&self, cont: ICont<I,C,S,M>) -> IResult<O,I,S,M> {
-                self.0.0.run(cont)
-            }
-        }
-    };
-    (($p1:ident,$p1t:ident), $(($ps:ident, $pst:ident)),+) => {
-        impl<I:Input,O,C,S:Clone,M:Cb,$p1t:ParserOnce<I,O,C,S,M>,$($pst: ParserOnce<I,O,C,S,M>),+> ParserOnce<I,O,C,S,M> for Choice<($p1t,$($pst),+)> {
-            #[inline]
-            fn run_once(self, cont: ICont<I,C,S,M>) -> IResult<O,I,S,M> {
-                let ICont { mut ok, config, drop } = cont;
-                let Choice(($p1,$($ps),+)) = self;
-                if ok.cutted {
-                    drop()
-                }
-                choice_run_once!(ok,config,drop,$p1,$($ps),+);
-            }
-        }
-        impl<I:Input,O,C,S:Clone,M:Cb,$p1t:Parser<I,O,C,S,M>,$($pst: Parser<I,O,C,S,M>),+> Parser<I,O,C,S,M> for Choice<($p1t,$($pst),+)> {
-            #[inline]
-            fn run(&self, cont: ICont<I,C,S,M>) -> IResult<O,I,S,M> {
-                let Choice(($p1,$($ps),+)) = &self;
-                let ICont { mut ok, config, drop } = cont;
-                if ok.cutted {
-                    drop()
-                }
-                choice_run!(ok,config,drop,$p1,$($ps),+);
-            }
-        }
-        choice_derive!($(($ps,$pst)),+);
-    };
-}
-macro_rules! choice_run_once {
-    ($ok:ident,$config:ident,$drop:ident,$p:ident) => {
-        return $p.run_once(ICont { ok:$ok, config:$config, drop:$drop });
-    };
-    ($ok:ident,$config:ident,$drop:ident,$p1:ident, $($pn:ident),+) => {
-        let (input, state, cutted) = ($ok.input.clone(), $ok.state.clone(), $ok.cutted);
-        match run_drop($p1, ICont { ok:$ok, config:$config, drop:$drop }, (input, state)) {
-            (Ok((o, ok)), _) => return Ok((o, ok)),
-            (Err(e), None) => return Err(e),
-            (Err(e), Some((input, state))) => $ok = IOk { input, state, err: Some(e), cutted },
-        }
-        choice_run_once!($ok,$config,$drop,$($pn),+);
-    };
-}
-macro_rules! choice_run {
-    ($ok:ident,$config:ident,$drop:ident,$p:ident) => {
-        return $p.run(ICont { ok:$ok, config:$config, drop:$drop });
-    };
-    ($ok:ident,$config:ident,$drop:ident,$p1:ident, $($pn:ident),+) => {
-        let (input, state, cutted) = ($ok.input.clone(), $ok.state.clone(), $ok.cutted);
-        match run_drop($p1.to_ref(), ICont { ok:$ok, config:$config, drop:$drop }, (input, state)) {
-            (Ok((o, ok)), _) => return Ok((o, ok)),
-            (Err(e), None) => return Err(e),
-            (Err(e), Some((input, state))) => $ok = IOk { input, state, err: Some(e), cutted },
-        }
-        choice_run!($ok,$config,$drop,$($pn),+);
-    };
-}
-choice_derive!(
-    (p1, P1),
-    (p2, P2),
-    (p3, P3),
-    (p4, P4),
-    (p5, P5),
-    (p6, P6),
-    (p7, P7),
-    (p8, P8),
-    (p9, P9),
-    (p10, P10),
-    (p11, P11),
-    (p12, P12),
-    (p13, P13),
-    (p14, P14),
-    (p15, P15),
-    (p16, P16),
-    (p17, P17),
-    (p18, P18),
-    (p19, P19),
-    (p20, P20),
-    (p21, P21),
-    (p22, P22),
-    (p23, P23),
-    (p24, P24),
-    (p25, P25),
-    (p26, P26),
-    (p27, P27),
-    (p28, P28),
-    (p29, P29),
-    (p30, P30)
-);
 
 /// It returns `Some` if the parser succeeds, returns `None` if the parser does not consume any input and fails, and fails if the parser consumes some input and fails.
 /// # Example
 /// ```
-/// use chasa::char::prelude::*;
+/// use chasa::prelude::*;
 /// assert_eq!(char('a').or_not().parse_ok("aa"), Some(Some('a')));
 /// assert_eq!(char('a').or_not().parse_ok("bb"), Some(None));
 /// assert_eq!(char('a').right(char('b')).or_not().parse_ok("bb"), Some(None));
@@ -884,37 +648,39 @@ choice_derive!(
 /// ```
 #[derive(Clone, Copy)]
 pub struct OrNot<P>(pub(crate) P);
-impl<I: Input, Output, C, S: Clone, M: Cb, P: ParserOnce<I, Output, C, S, M>> ParserOnce<I, Option<Output>, C, S, M>
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>> ParserOnce<I, Option<O>, E, C, S>
     for OrNot<P>
 {
-    #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Option<Output>, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        if ok.cutted {
-            drop()
-        }
-        let (input, state, cutted) = (ok.input.clone(), ok.state.clone(), ok.cutted);
-        match run_drop(self.0, ICont { ok, config, drop }, (input, state)) {
-            (Ok((o, ok)), _) => Ok((Some(o), ok)),
-            (Err(e), None) => Err(e),
-            (Err(e), Some((input, state))) => Ok((None, IOk { input, state, err: Some(e), cutted })),
+    #[inline(always)]
+    fn run_once(self, args: Args<I, E, C, S>) -> Option<Option<O>> {
+        let Args { input, config, state, consume, error } = args;
+        match consume.cons((input.clone(), state.clone()), |consume| {
+            self.0.run_once(Args { input, config, state, consume, error })
+        }) {
+            (None, None) => None,
+            (Some(o), _) => Some(Some(o)),
+            (None, Some((input_bak, state_bak))) => {
+                *input = input_bak;
+                *state = state_bak;
+                Some(None)
+            },
         }
     }
 }
-impl<I: Input, Output, C, S: Clone, M: Cb, P: Parser<I, Output, C, S, M>> Parser<I, Option<Output>, C, S, M>
-    for OrNot<P>
-{
-    #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Option<Output>, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        if ok.cutted {
-            drop()
-        }
-        let (input, state, cutted) = (ok.input.clone(), ok.state.clone(), ok.cutted);
-        match run_drop(self.0.to_ref(), ICont { ok, config, drop }, (input, state)) {
-            (Ok((o, ok)), _) => Ok((Some(o), ok)),
-            (Err(e), None) => Err(e),
-            (Err(e), Some((input, state))) => Ok((None, IOk { input, state, err: Some(e), cutted })),
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>> Parser<I, Option<O>, E, C, S> for OrNot<P> {
+    #[inline(always)]
+    fn run(&mut self, args: Args<I, E, C, S>) -> Option<Option<O>> {
+        let Args { input, config, state, consume, error } = args;
+        match consume
+            .cons((input.clone(), state.clone()), |consume| self.0.run(Args { input, config, state, consume, error }))
+        {
+            (None, None) => None,
+            (Some(o), _) => Some(Some(o)),
+            (None, Some((input_bak, state_bak))) => {
+                *input = input_bak;
+                *state = state_bak;
+                Some(None)
+            },
         }
     }
 }
@@ -922,166 +688,130 @@ impl<I: Input, Output, C, S: Clone, M: Cb, P: Parser<I, Output, C, S, M>> Parser
 /// If the parser fails, it will not consume any input. This is useful for parsing tokens that have multiple parts combined.
 /// # Example
 /// ```
-/// use chasa::char::prelude::*;
+/// use chasa::prelude::*;
 /// assert_eq!(char('b').right(char('b')).or(char('b').right(char('a'))).parse_ok("ba"), None);
 /// assert_eq!(char('b').right(char('b')).cut().or(char('b').right(char('a'))).parse_ok("ba"), Some('a'));
 /// ```
 #[derive(Clone, Copy)]
 pub struct Cut<P>(pub(crate) P);
-impl<I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>> ParserOnce<I, Output, C, S, M> for Cut<P> {
-    #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Output, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        if ok.cutted {
-            drop()
-        }
-        match run_drop(self.0, ICont { ok, config, drop: &mut || {} }, ()) {
-            (Ok((o, ok)), d) => {
-                if d.is_some() {
-                    drop()
-                }
-                Ok((o, IOk { cutted: ok.cutted && !d.is_some(), ..ok }))
-            },
-            (Err(e), _) => Err(e),
-        }
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>> ParserOnce<I, O, E, C, S> for Cut<P> {
+    #[inline(always)]
+    fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {
+        let Args { input, config, state, consume: _, error } = args;
+        self.0.run_once(Args { input, config, state, error, consume: &mut Consume::new() })
     }
 }
-impl<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>> Parser<I, Output, C, S, M> for Cut<P> {
-    #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Output, I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        if ok.cutted {
-            drop()
-        }
-        match run_drop(self.0.to_ref(), ICont { ok, config, drop }, ()) {
-            (Ok((o, ok)), d) => {
-                if d.is_some() {
-                    drop()
-                }
-                Ok((o, IOk { cutted: ok.cutted && !d.is_some(), ..ok }))
-            },
-            (Err(e), _) => Err(e),
-        }
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>> Parser<I, O, E, C, S> for Cut<P> {
+    #[inline(always)]
+    fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
+        let Args { input, config, state, consume: _, error } = args;
+        self.0.run(Args { input, config, state, error, consume: &mut Consume::new() })
     }
 }
 
 /// Returns the parser result with the position before and after the parse.
 /// # Example
 /// ```
-/// use chasa::char::prelude::*;
-/// assert_eq!(char('a').ranged().parse_ok("a"), Some(('a',0,1)));
-/// assert_eq!(str("abcd").to(()).ranged().parse_ok("abcd"), Some(((),0,4)));
-/// assert_eq!(ws.right(str("abcd").to(()).ranged()).parse_ok("    abcd"), Some(((),4,8)))
+/// use chasa::prelude::*;
+/// assert_eq!(char('a').ranged().parse_ok(pos_str("a")), Some(('a',1,2)));
+/// assert_eq!(str("abcd").to(()).ranged().parse_ok(pos_str("abcd")), Some(((),1,5)));
+/// assert_eq!(str("abcd").right(str("efg").to(()).ranged()).parse_ok(pos_str("abcdefg")), Some(((),5,8)))
 /// ```
 #[derive(Clone, Copy)]
 pub struct Ranged<P>(pub(crate) P);
-impl<I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>> ParserOnce<I, (Output, I::Pos, I::Pos), C, S, M>
-    for Ranged<P>
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>>
+    ParserOnce<I, (O, I::Position, I::Position), E, C, S> for Ranged<P>
 {
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<(Output, I::Pos, I::Pos), I, S, M> {
-        let pos = cont.ok.input.pos();
-        self.0.run_once(cont).map(|(o, ok)| ((o, pos, ok.input.pos()), ok))
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<(O, I::Position, I::Position)> {
+        let pos = args.input.position();
+        self.0.run_once(args.by_ref()).map(|o| (o, pos, args.input.position()))
     }
 }
-impl<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>> Parser<I, (Output, I::Pos, I::Pos), C, S, M>
-    for Ranged<P>
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>>
+    Parser<I, (O, I::Position, I::Position), E, C, S> for Ranged<P>
 {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<(Output, I::Pos, I::Pos), I, S, M> {
-        let pos = cont.ok.input.pos();
-        self.0.run(cont).map(|(o, ok)| ((o, pos, ok.input.pos()), ok))
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<(O, I::Position, I::Position)> {
+        let pos = args.input.position();
+        self.0.run(args.by_ref()).map(|o| (o, pos, args.input.position()))
     }
 }
 
 /// Returns together with the string accepted by the parser.
-pub struct GetString<P, O>(pub(crate) P, pub(crate) PhantomData<fn() -> O>);
-impl<O: FromIterator<I::Item>, I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>>
-    ParserOnce<I, (Output, O), C, S, M> for GetString<P, O>
+#[derive(Clone, Copy)]
+pub struct GetString<P, B>(pub(crate) P, pub(crate) PhantomData<fn() -> B>);
+impl<B: FromIterator<I::Token>, I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>>
+    ParserOnce<I, (O, B), E, C, S> for GetString<P, B>
 {
-    #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<(Output, O), I, S, M> {
-        let (mut input, begin) = (cont.ok.input.clone(), cont.ok.input.index());
-        self.0.run_once(cont).map(|(o, ok)| {
-            let end = ok.input.index();
-            let str = InputIter { input: &mut input, begin, end }.collect();
-            ((o, str), ok)
-        })
+    #[inline(always)]
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<(O, B)> {
+        let mut input = args.input.clone();
+        let o = self.0.run_once(args.by_ref())?;
+        let end = args.input.position().offset();
+        Some((o, InputIter { input: &mut input, end }.collect()))
     }
 }
-impl<O: FromIterator<I::Item>, I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>>
-    Parser<I, (Output, O), C, S, M> for GetString<P, O>
+
+impl<B: FromIterator<I::Token>, I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>>
+    Parser<I, (O, B), E, C, S> for GetString<P, B>
 {
-    #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<(Output, O), I, S, M> {
-        let (mut input, begin) = (cont.ok.input.clone(), cont.ok.input.index());
-        self.0.run(cont).map(|(o, ok)| {
-            let end = ok.input.index();
-            let str = InputIter { input: &mut input, begin, end }.collect();
-            ((o, str), ok)
-        })
+    #[inline(always)]
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<(O, B)> {
+        let mut input = args.input.clone();
+        let o = self.0.run(args.by_ref())?;
+        let end = args.input.position().offset();
+        Some((o, InputIter { input: &mut input, end }.collect()))
     }
 }
+
+pub struct GetStringExtend<P, B>(pub(crate) P, pub(crate) B);
+#[inline(always)]
+pub fn extend_with_str<B, P>(str: B, parser: P) -> GetStringExtend<P, B> {
+    GetStringExtend(parser, str)
+}
+
+impl<B: Extend<I::Token> + Clone, I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>>
+    Parser<I, (O, B), E, C, S> for GetStringExtend<P, B>
+{
+    #[inline(always)]
+    fn run(&mut self, args: Args<I, E, C, S>) -> Option<(O, B)> {
+        GetStringExtend(self.0.by_ref(), self.1.clone()).run_once(args)
+    }
+}
+impl<B: Extend<I::Token>, I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>>
+    ParserOnce<I, (O, B), E, C, S> for GetStringExtend<P, B>
+{
+    #[inline(always)]
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<(O, B)> {
+        let mut input = args.input.clone();
+        let o = self.0.run_once(args.by_ref())?;
+        let end = args.input.position().offset();
+        let mut b = self.1;
+        b.extend(InputIter { input: &mut input, end });
+        Some((o, b))
+    }
+}
+
 struct InputIter<'a, I: Input> {
     input: &'a mut I,
-    begin: usize,
-    end: usize,
+    end: <I::Position as Position>::Offset,
 }
 impl<'a, I: Input> Iterator for InputIter<'a, I> {
-    type Item = I::Item;
+    type Item = I::Token;
     #[inline]
-    fn next(&mut self) -> Option<I::Item> {
-        if self.input.index() < self.end {
-            self.input.next()?.ok()
+    fn next(&mut self) -> Option<I::Token> {
+        if self.input.position().offset() < self.end {
+            self.input.uncons().ok()
         } else {
             None
         }
-    }
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.end - self.begin;
-        (len, Some(len))
-    }
-}
-impl<'a, I: Input> ExactSizeIterator for InputIter<'a, I> {}
-
-pub struct GetStringExtend<P, O>(pub(crate) P, pub(crate) O);
-#[inline]
-pub fn extend_with_str<O, P>(str: O, parser: P) -> GetStringExtend<P, O> {
-    GetStringExtend(parser, str)
-}
-impl<O: Extend<I::Item>, I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>>
-    ParserOnce<I, (Output, O), C, S, M> for GetStringExtend<P, O>
-{
-    #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<(Output, O), I, S, M> {
-        let (mut input, begin) = (cont.ok.input.clone(), cont.ok.input.index());
-        self.0.run_once(cont).map(|(o, ok)| {
-            let end = ok.input.index();
-            let mut str = self.1;
-            str.extend(InputIter { input: &mut input, begin, end });
-            ((o, str), ok)
-        })
-    }
-}
-impl<O: Extend<I::Item> + Clone, I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>>
-    Parser<I, (Output, O), C, S, M> for GetStringExtend<P, O>
-{
-    #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<(Output, O), I, S, M> {
-        let (mut input, begin) = (cont.ok.input.clone(), cont.ok.input.index());
-        self.0.run(cont).map(|(o, ok)| {
-            let end = ok.input.index();
-            let mut str = self.1.clone();
-            str.extend(InputIter { input: &mut input, begin, end });
-            ((o, str), ok)
-        })
     }
 }
 /// If successful, it does not consume input. The subsequent parser will read the same part again.
 /// # Example
 /// ```
-/// use chasa::char::prelude::*;
+/// use chasa::prelude::*;
 /// assert_eq!(char('a').and(char('a')).parse_ok("a"), None);
 /// assert_eq!(before(char('a')).and(char('a')).parse_ok("a"), Some(('a','a')));
 /// assert_eq!(char('a').and(char('b')).parse_ok("ab"), Some(('a','b')));
@@ -1094,20 +824,28 @@ pub fn before<P>(parser: P) -> Before<P> {
     Before(parser)
 }
 
-impl<I: Input, Output, C, S: Clone, M: Cb, P: ParserOnce<I, Output, C, S, M>> ParserOnce<I, Output, C, S, M>
-    for Before<P>
-{
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>> ParserOnce<I, O, E, C, S> for Before<P> {
     #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<Output, I, S, M> {
-        let (input, state) = (cont.ok.input.clone(), cont.ok.state.clone());
-        self.0.run_once(cont).map(|(o, IOk { err, .. })| (o, IOk { input, state, err, cutted: false }))
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O> {
+        let (input, state) = (args.input.clone(), args.state.clone());
+        let res = self.0.run_once(args.by_ref());
+        if res.is_some() {
+            *args.input = input;
+            *args.state = state;
+        }
+        res
     }
 }
-impl<I: Input, Output, C, S: Clone, M: Cb, P: Parser<I, Output, C, S, M>> Parser<I, Output, C, S, M> for Before<P> {
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>> Parser<I, O, E, C, S> for Before<P> {
     #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<Output, I, S, M> {
-        let (input, state) = (cont.ok.input.clone(), cont.ok.state.clone());
-        self.0.run(cont).map(|(o, IOk { err, .. })| (o, IOk { input, state, err, cutted: false }))
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O> {
+        let (input, state) = (args.input.clone(), args.state.clone());
+        let res = self.0.run(args.by_ref());
+        if res.is_some() {
+            *args.input = input;
+            *args.state = state;
+        }
+        res
     }
 }
 
@@ -1115,12 +853,12 @@ impl<I: Input, Output, C, S: Clone, M: Cb, P: Parser<I, Output, C, S, M>> Parser
 /// If the original parser consumes input and fails, the whole thing will fail.
 /// # Example
 /// ```
-/// use chasa::char::prelude::*;
+/// use chasa::prelude::*;
 /// assert_eq!(char('a').and(char('a')).parse_ok("aa"), Some(('a','a')));
-/// assert_eq!(not_followed_by(char('a'),'a').and(char('a')).parse_ok("aa"), None);
-/// assert_eq!(not_followed_by(char('b'),'b').and(char('a')).parse_ok("a"), Some(((),'a')));
-/// assert_eq!(not_followed_by(char('b'),'b').and(any).parse_ok("b"), None);
-/// assert_eq!(not_followed_by(char('b').and(char('a')),'b').and(any).parse_ok("bb"), None);
+/// assert_eq!(not_followed_by(char('a'),"a").and(char('a')).parse_ok("aa"), None);
+/// assert_eq!(not_followed_by(char('b'),"b").and(char('a')).parse_ok("a"), Some(((),'a')));
+/// assert_eq!(not_followed_by(char('b'),"b").and(any).parse_ok("b"), None);
+/// assert_eq!(not_followed_by(char('b').and(char('a')),"b").and(any).parse_ok("bb"), None);
 /// ```
 pub struct NotFollowedBy<P, L, O>(pub(crate) P, pub(crate) L, pub(crate) PhantomData<O>);
 impl<P: Clone, L: Clone, O> Clone for NotFollowedBy<P, L, O> {
@@ -1131,44 +869,44 @@ impl<P: Clone, L: Clone, O> Clone for NotFollowedBy<P, L, O> {
 }
 impl<P: Copy, L: Copy, O> Copy for NotFollowedBy<P, L, O> {}
 #[inline]
-pub fn not_followed_by<P, L: Display + 'static, Output>(parser: P, label: L) -> NotFollowedBy<P, L, Output> {
+pub fn not_followed_by<P, L: Into<Cow<'static, str>>, O>(parser: P, label: L) -> NotFollowedBy<P, L, O> {
     NotFollowedBy(parser, label, PhantomData)
 }
-impl<I: Input, Output, C, S: Clone, M: Cb, P: ParserOnce<I, Output, C, S, M>, L: Display + 'static>
-    ParserOnce<I, (), C, S, M> for NotFollowedBy<P, L, Output>
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>, L: Into<Cow<'static, str>>>
+    ParserOnce<I, (), E, C, S> for NotFollowedBy<P, L, O>
 {
-    #[inline]
-    fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<(), I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        let (input, state, pos) = (ok.input.clone(), ok.state.clone(), ok.input.pos());
-        match run_drop(self.0, ICont { ok, config, drop: &mut || {} }, (input, state)) {
-            (Ok((_, ok)), _) => {
-                Err(Eb::unexpected(self.1).at::<I>(ok.input.index(), pos, Some(ok.input.pos())).or_merge(ok.err))
+    #[inline(always)]
+    fn run_once(self, args: Args<I, E, C, S>) -> Option<()> {
+        let Args { input, config, state, consume, error } = args;
+        match consume.cons((input.clone(), state.clone()), |consume| {
+            self.0.run_once(Args { input, config, state, consume, error })
+        }) {
+            (None, None) => None,
+            (Some(_), _) => None,
+            (None, Some((input_bak, state_bak))) => {
+                *input = input_bak;
+                *state = state_bak;
+                Some(())
             },
-            (Err(e), None) => {
-                drop();
-                Err(e)
-            },
-            (Err(e), Some((input, state))) => Ok(((), IOk { input, state, err: Some(e), cutted: false })),
         }
     }
 }
-impl<I: Input, Output, C, S: Clone, M: Cb, P: Parser<I, Output, C, S, M>, L: Display + Clone + 'static>
-    Parser<I, (), C, S, M> for NotFollowedBy<P, L, Output>
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>, L: Into<Cow<'static, str>>>
+    Parser<I, (), E, C, S> for NotFollowedBy<P, L, O>
 {
-    #[inline]
-    fn run(&self, cont: ICont<I, C, S, M>) -> IResult<(), I, S, M> {
-        let ICont { ok, config, drop } = cont;
-        let (input, state, pos) = (ok.input.clone(), ok.state.clone(), ok.input.pos());
-        match run_drop(self.0.to_ref(), ICont { ok, config, drop: &mut || {} }, (input, state)) {
-            (Ok((_, ok)), _) => Err(Eb::unexpected(self.1.clone())
-                .at::<I>(ok.input.index(), pos, Some(ok.input.pos()))
-                .or_merge(ok.err)),
-            (Err(e), None) => {
-                drop();
-                Err(e)
+    #[inline(always)]
+    fn run(&mut self, args: Args<I, E, C, S>) -> Option<()> {
+        let Args { input, config, state, consume, error } = args;
+        match consume
+            .cons((input.clone(), state.clone()), |consume| self.0.run(Args { input, config, state, consume, error }))
+        {
+            (None, None) => None,
+            (Some(_), _) => None,
+            (None, Some((input_bak, state_bak))) => {
+                *input = input_bak;
+                *state = state_bak;
+                Some(())
             },
-            (Err(e), Some((input, state))) => Ok(((), IOk { input, state, err: Some(e), cutted: false })),
         }
     }
 }

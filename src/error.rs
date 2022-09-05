@@ -1,258 +1,404 @@
-use {
-    super::input::Input,
-    std::{
-        fmt,
-        fmt::{Debug, Display},
-    },
+use std::{
+    borrow::Cow,
+    cmp::Ordering::*,
+    collections::HashSet,
+    error::Error as ErrorTrait,
+    fmt::{self, Display},
+    hash::Hash,
+    iter,
 };
 
-pub trait CustomBuilder {
-    type To: std::error::Error;
-    fn merge(self, other: Self) -> Self;
-    fn label(self, label: impl Display + 'static) -> Self;
-    fn calc(self) -> Self::To;
+use either::Either;
 
-    #[inline]
-    fn label_with<T: Display>(self, label: impl Fn() -> T + 'static) -> Self
+use super::input::{Input, Position, Ranged};
+
+#[derive(Clone, Copy)]
+pub struct Unexpected<T>(T);
+#[inline(always)]
+pub fn unexpected<T>(token: T) -> Unexpected<T> {
+    Unexpected(token)
+}
+
+#[derive(Clone, Copy)]
+pub struct Expected<T>(T);
+#[inline(always)]
+pub fn expected<T>(token: T) -> Expected<T> {
+    Expected(token)
+}
+
+#[derive(Clone, Copy)]
+pub struct Message<T>(T);
+#[inline(always)]
+pub fn message<T>(message: T) -> Message<T> {
+    Message(message)
+}
+
+pub enum StdErrorMessage<U, E, M> {
+    Unexpected(U),
+    Expected(E),
+    Message(M),
+}
+impl<U, E, M, T: Into<U>> From<Unexpected<T>> for StdErrorMessage<U, E, M> {
+    #[inline(always)]
+    fn from(from: Unexpected<T>) -> Self {
+        StdErrorMessage::Unexpected(from.0.into())
+    }
+}
+impl<U, E, M, T: Into<E>> From<Expected<T>> for StdErrorMessage<U, E, M> {
+    #[inline(always)]
+    fn from(from: Expected<T>) -> Self {
+        StdErrorMessage::Expected(from.0.into())
+    }
+}
+impl<U, E, M, T: Into<M>> From<Message<T>> for StdErrorMessage<U, E, M> {
+    #[inline(always)]
+    fn from(from: Message<T>) -> Self {
+        StdErrorMessage::Message(from.0.into())
+    }
+}
+
+pub struct EndOfInput;
+pub struct Token<T>(T);
+pub fn token<T>(token: T) -> Token<T> {
+    Token(token)
+}
+pub struct Format<T>(T);
+pub fn format<T>(format: T) -> Format<T> {
+    Format(format)
+}
+pub struct Error<T>(T);
+pub fn error<T>(error: T) -> Error<T> {
+    Error(error)
+}
+
+#[derive(Hash, PartialEq, Eq)]
+pub enum StdToken<T, L> {
+    EndOfInput,
+    Token(T),
+    Format(L),
+}
+impl<T, L> From<EndOfInput> for StdToken<T, L> {
+    fn from(_: EndOfInput) -> Self {
+        StdToken::EndOfInput
+    }
+}
+impl<U, T: From<U>, L> From<Token<U>> for StdToken<T, L> {
+    fn from(from: Token<U>) -> Self {
+        StdToken::Token(from.0.into())
+    }
+}
+impl<U, T, L: From<U>> From<Format<U>> for StdToken<T, L> {
+    fn from(from: Format<U>) -> Self {
+        StdToken::Format(from.0.into())
+    }
+}
+impl<T: Display, L: Display> Display for StdToken<T, L> {
+    #[inline(always)]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EndOfInput => "end of input".fmt(f),
+            Self::Token(token) => token.fmt(f),
+            Self::Format(err) => err.fmt(f),
+        }
+    }
+}
+
+pub enum StdMessage<M, E> {
+    Format(M),
+    Error(E),
+}
+impl<T, M: From<T>, E> From<Format<T>> for StdMessage<M, E> {
+    fn from(from: Format<T>) -> Self {
+        StdMessage::Format(from.0.into())
+    }
+}
+impl<T, M, E: From<T>> From<Error<T>> for StdMessage<M, E> {
+    fn from(from: Error<T>) -> Self {
+        StdMessage::Error(from.0.into())
+    }
+}
+impl<M: Display, E: Display> Display for StdMessage<M, E> {
+    #[inline(always)]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Format(fmt) => fmt.fmt(f),
+            Self::Error(err) => err.fmt(f),
+        }
+    }
+}
+
+pub trait ParseError<I: Input> {
+    type Message: From<I::Message>;
+    type Warn;
+
+    fn new() -> Self;
+    fn add(&mut self, start: Option<I::Position>, end: I::Position) -> bool;
+
+    fn clear_expected(&mut self);
+    fn set(&mut self, message: Self::Message);
+
+    fn warn(&mut self, start: Option<I::Position>, end: I::Position, warn: Self::Warn);
+
+    fn save(&mut self);
+}
+
+pub struct StdParseError<Token, Position> {
+    start: Option<Position>,
+    end: Option<Position>,
+    unexpected: Option<StdToken<Token, Cow<'static, str>>>,
+    expected: HashSet<StdToken<Token, Cow<'static, str>>>,
+    messages: HashSet<Cow<'static, str>>,
+    errors: Vec<Box<dyn ErrorTrait>>,
+    recovered: Vec<Ranged<Position, StdRecovered<Token>>>,
+}
+pub enum StdRecovered<Token> {
+    Trivial {
+        unexpected: Option<StdToken<Token, Cow<'static, str>>>,
+        expected: Box<[StdToken<Token, Cow<'static, str>>]>,
+    },
+    Fail {
+        messages: Box<[Cow<'static, str>]>,
+        errors: Box<[Box<dyn ErrorTrait>]>,
+    },
+    Warn {
+        message: StdMessage<Cow<'static, str>, Box<dyn ErrorTrait>>,
+    },
+}
+
+pub type StdParseErrorFor<Token> = StdErrorMessage<
+    StdToken<Token, Cow<'static, str>>,
+    StdToken<Token, Cow<'static, str>>,
+    StdMessage<Cow<'static, str>, Box<dyn ErrorTrait>>,
+>;
+impl<Token, Position> StdParseError<Token, Position> {
+    #[inline(always)]
+    pub fn is_message(&self) -> bool {
+        !self.messages.is_empty() || !self.errors.is_empty()
+    }
+
+    #[inline(always)]
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = Ranged<&'a Position, impl Display + 'a>>
     where
-        Self: Sized,
+        Token: Display,
     {
-        self.label(LazyDisplay(label))
-    }
-}
-pub type Nil = std::convert::Infallible;
-impl CustomBuilder for Nil {
-    type To = Nil;
-    fn merge(self, _: Self) -> Self {
-        unreachable!()
-    }
-    fn label(self, _: impl Display + 'static) -> Self {
-        unreachable!()
-    }
-    fn calc(self) -> Nil {
-        unreachable!()
+        let recovered = self.recovered.iter().map(|Ranged { start, end, item }| Ranged {
+            start: start.as_ref(),
+            end,
+            item: match item {
+                StdRecovered::Trivial { unexpected, expected } => {
+                    StdParseErrorDisplay::Trivial { unexpected: unexpected.as_ref(), expected: Either::Left(expected) }
+                },
+                StdRecovered::Fail { messages, errors } => {
+                    StdParseErrorDisplay::Fail { messages: Either::Left(messages), errors }
+                },
+                StdRecovered::Warn { message: StdMessage::Error(err) } => {
+                    StdParseErrorDisplay::Warn { message: StdMessage::Error(err.as_ref()) }
+                },
+                StdRecovered::Warn { message: StdMessage::Format(fmt) } => {
+                    StdParseErrorDisplay::Warn { message: StdMessage::Format(fmt) }
+                },
+            },
+        });
+        match &self.end {
+            None => Either::Left(recovered),
+            Some(end) => Either::Right(recovered.chain(iter::once_with(|| Ranged {
+                start: self.start.as_ref(),
+                end,
+                item: if self.is_message() {
+                    StdParseErrorDisplay::Fail { messages: Either::Right(&self.messages), errors: &self.errors }
+                } else {
+                    StdParseErrorDisplay::Trivial {
+                        unexpected: self.unexpected.as_ref(),
+                        expected: Either::Right(&self.expected),
+                    }
+                },
+            }))),
+        }
     }
 }
 
-pub struct Pos<P, T> {
-    index: usize,
-    begin: P,
-    end: Option<P>,
-    body: T,
-}
-impl<P: Display, T: Display> Display for Pos<P, T> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(end) = &self.end {
-            write!(fmt, "{} at {}..{}", self.body, self.begin, end)
+impl<I: Input> ParseError<I> for Option<StdParseError<I::Token, I::Position>>
+where
+    I::Token: Hash + Eq,
+    StdParseErrorFor<I::Token>: From<I::Message>,
+{
+    type Message = StdParseErrorFor<I::Token>;
+    type Warn = StdMessage<Cow<'static, str>, Box<dyn ErrorTrait>>;
+
+    #[inline(always)]
+    fn new() -> Self {
+        Some(<StdParseError<_, _> as ParseError<I>>::new())
+    }
+
+    #[inline(always)]
+    fn add(&mut self, start: Option<<I as Input>::Position>, end: <I as Input>::Position) -> bool {
+        if let Some(err) = self {
+            <StdParseError<_, _> as ParseError<I>>::add(err, start, end)
         } else {
-            write!(fmt, "{} at {}", self.body, self.begin)
+            false
+        }
+    }
+
+    #[inline(always)]
+    fn clear_expected(&mut self) {
+        if let Some(err) = self {
+            <StdParseError<_, _> as ParseError<I>>::clear_expected(err)
+        }
+    }
+
+    #[inline(always)]
+    fn set(&mut self, messages: Self::Message) {
+        if let Some(err) = self {
+            <StdParseError<_, _> as ParseError<I>>::set(err, messages)
+        }
+    }
+
+    #[inline(always)]
+    fn warn(&mut self, start: Option<<I as Input>::Position>, end: <I as Input>::Position, warn: Self::Warn) {
+        if let Some(err) = self {
+            <StdParseError<_, _> as ParseError<I>>::warn(err, start, end, warn)
+        }
+    }
+
+    #[inline(always)]
+    fn save(&mut self) {
+        if let Some(err) = self {
+            <StdParseError<_, _> as ParseError<I>>::save(err)
         }
     }
 }
-impl<P: Debug, T: Debug> Debug for Pos<P, T> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(end) = &self.end {
-            write!(fmt, "{:?} at {:?}..{:?}", self.body, self.begin, end)
-        } else {
-            write!(fmt, "{:?} at {:?}", self.body, self.begin)
+
+impl<I: Input> ParseError<I> for StdParseError<I::Token, I::Position>
+where
+    I::Token: Hash + Eq,
+    StdParseErrorFor<I::Token>: From<I::Message>,
+{
+    type Message = StdParseErrorFor<I::Token>;
+    type Warn = StdMessage<Cow<'static, str>, Box<dyn ErrorTrait>>;
+
+    #[inline(always)]
+    fn new() -> Self {
+        Self {
+            start: None,
+            end: None,
+            unexpected: None,
+            expected: HashSet::new(),
+            messages: HashSet::new(),
+            errors: vec![],
+            recovered: vec![],
         }
     }
-}
-impl<P, T: CustomBuilder> Pos<P, T> {
-    pub fn label(self, label: impl Display + 'static) -> Self {
-        Pos { body: self.body.label(label), ..self }
-    }
-    pub fn label_with<L: Display>(self, label: impl Fn() -> L + 'static) -> Self {
-        Pos { body: self.body.label_with(label), ..self }
-    }
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Pos<P, U> {
-        let Pos { index, begin, end, body } = self;
-        Pos { index, begin, end, body: f(body) }
-    }
-}
-impl<P: Ord, T: CustomBuilder> Pos<P, T> {
-    pub fn merge(self, other: Self) -> Self {
-        use std::cmp::Ordering::*;
-        match self.index.cmp(&other.index) {
-            Greater => self,
-            Less => other,
-            Equal => Self {
-                index: self.index,
-                body: self.body.merge(other.body),
-                begin: self.begin.min(other.begin),
-                end: match (self.end, other.end) {
-                    (None, None) => None,
-                    (None, Some(end)) | (Some(end), None) => Some(end),
-                    (Some(end1), Some(end2)) => Some(end1.max(end2)),
+
+    #[inline(always)]
+    fn add(&mut self, start: Option<I::Position>, end: I::Position) -> bool {
+        match &self.end {
+            None => {
+                self.start = start;
+                self.end = Some(end);
+                true
+            },
+            Some(old_end) => match old_end.offset().cmp(&end.offset()) {
+                Greater => false,
+                Less => {
+                    self.start = start;
+                    self.end = Some(end);
+                    self.unexpected = None;
+                    self.expected.clear();
+                    self.messages.clear();
+                    true
+                },
+                Equal => match (&self.start, start) {
+                    (None, None) => true,
+                    (Some(_), None) => false,
+                    (None, Some(start)) => {
+                        self.start = Some(start);
+                        self.unexpected = None;
+                        self.expected.clear();
+                        self.messages.clear();
+                        true
+                    },
+                    (Some(old_start), Some(start)) => match old_start.offset().cmp(&start.offset()) {
+                        Greater => false,
+                        Equal => true,
+                        Less => {
+                            self.start = Some(start);
+                            self.unexpected = None;
+                            self.expected.clear();
+                            self.messages.clear();
+                            true
+                        },
+                    },
                 },
             },
         }
     }
-    pub fn or_merge(self, other: Option<Self>) -> Self {
-        match other {
-            Some(other) => self.merge(other),
-            None => self,
-        }
-    }
-}
 
-pub enum Builder<M: CustomBuilder> {
-    Trivial { unexpect: Option<Box<dyn Display + 'static>>, expect: LazyTree<Box<dyn Display + 'static>> },
-    Message(LazyTree<Box<dyn Display + 'static>>),
-    Custom(M),
-}
-impl<M: CustomBuilder> CustomBuilder for Builder<M> {
-    type To = Messages<M::To>;
-    fn merge(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Trivial { unexpect: u1, expect: e1 }, Self::Trivial { unexpect: u2, expect: e2 }) => {
-                Self::Trivial { unexpect: u1.or(u2), expect: LazyTree::Merge(Box::new(e1), Box::new(e2)) }
-            },
-            (Self::Trivial { .. }, item) => item,
-            (Self::Custom(c1), Self::Custom(c2)) => Self::Custom(c1.merge(c2)),
-            (item, _) => item,
-        }
-    }
-    fn calc(self) -> Self::To {
-        match self {
-            Builder::Trivial { unexpect, expect } => {
-                Messages::Trivial { unexpect: unexpect.map(|u| format!("{}", u)), expect: expect.merge() }
-            },
-            Builder::Message(msg) => Messages::Message(msg.merge()),
-            Builder::Custom(m) => Messages::Custom(m.calc()),
-        }
-    }
-    #[inline]
-    fn label(self, label: impl Display + 'static) -> Self {
-        match self {
-            Self::Trivial { unexpect, expect: _ } => {
-                Self::Trivial { unexpect, expect: LazyTree::Leaf(Box::new(label)) }
-            },
-            Self::Custom(c) => Self::Custom(c.label(label)),
-            o => o,
-        }
-    }
-}
-
-struct LazyDisplay<F>(F);
-impl<T: Display, F: Fn() -> T> Display for LazyDisplay<F> {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0().fmt(f)
-    }
-}
-impl<M: CustomBuilder> Builder<M> {
-    #[inline]
-    pub fn at<I: Input>(self, index: usize, begin: I::Pos, end: Option<I::Pos>) -> LazyError<I, M> {
-        Pos { index, begin, end, body: self }
+    #[inline(always)]
+    fn clear_expected(&mut self) {
+        self.expected.clear()
     }
 
-    #[inline]
-    pub fn expected_eoi() -> Self {
-        Self::Trivial { unexpect: None, expect: LazyTree::Leaf(Box::new("eoi")) }
-    }
-    #[inline]
-    pub fn unexpected_eoi() -> Self {
-        Self::Trivial { unexpect: Some(Box::new("eoi")), expect: LazyTree::Empty }
-    }
-    #[inline]
-    pub fn unexpected(token: impl Display + 'static) -> Self {
-        Self::Trivial { expect: LazyTree::Empty, unexpect: Some(Box::new(token)) }
-    }
-    #[inline]
-    pub fn unexpected_with<T: Display>(token: impl Fn() -> T + 'static) -> Self {
-        Self::unexpected(LazyDisplay(token))
-    }
-    #[inline]
-    pub fn message(msg: impl Display + 'static) -> Self {
-        Self::Message(LazyTree::Leaf(Box::new(msg)))
-    }
-    #[inline]
-    pub fn message_with<T: Display>(msg: impl Fn() -> T + 'static) -> Self {
-        Self::message(LazyDisplay(msg))
-    }
-    #[inline]
-    pub fn custom(msg: M) -> Self {
-        Self::Custom(msg)
-    }
-}
-
-#[inline]
-pub fn unexpect<M: CustomBuilder>(token: impl Display + 'static) -> Builder<M> {
-    Builder::<M>::unexpected(token)
-}
-#[inline]
-pub fn unexpect_with<M: CustomBuilder, T: Display>(token: impl Fn() -> T + 'static) -> Builder<M> {
-    Builder::<M>::unexpected_with(token)
-}
-#[inline]
-pub fn message<M: CustomBuilder>(msg: impl Display + 'static) -> Builder<M> {
-    Builder::<M>::message(msg)
-}
-#[inline]
-pub fn message_with<M: CustomBuilder, T: Display>(msg: impl Fn() -> T + 'static) -> Builder<M> {
-    Builder::<M>::message_with(msg)
-}
-
-pub type LazyError<I, M> = Pos<<I as Input>::Pos, Builder<M>>;
-pub type Error<I, M> = Pos<<I as Input>::Pos, Messages<M>>;
-
-pub enum LazyTree<T> {
-    Empty,
-    Leaf(T),
-    Merge(Box<Self>, Box<Self>),
-}
-impl<T: Display> LazyTree<T> {
-    fn merge(self) -> Vec<String> {
-        let mut res = std::collections::HashSet::new();
-        self.collect(&mut res);
-        res.into_iter().collect()
-    }
-    fn collect(self, res: &mut std::collections::HashSet<String>) {
-        match self {
-            LazyTree::Empty => {},
-            LazyTree::Leaf(t) => {
-                res.insert(format!("{}", t));
-            },
-            LazyTree::Merge(left, right) => {
-                left.collect(res);
-                right.collect(res)
-            },
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum Messages<M> {
-    Trivial { unexpect: Option<String>, expect: Vec<String> },
-    Message(Vec<String>),
-    Custom(M),
-}
-impl<M: Display> Display for Messages<M> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Trivial { unexpect, expect } => {
-                let mut before = false;
-                if let Some(unexpect) = unexpect {
-                    write!(fmt, "unexpected {}", unexpect)?;
-                    before = true;
+    #[inline(always)]
+    fn set(&mut self, message: Self::Message) {
+        match message {
+            StdErrorMessage::Unexpected(unexpected) => {
+                if !self.is_message() {
+                    self.unexpected = Some(unexpected);
                 }
-                if !expect.is_empty() {
-                    if before {
-                        write!(fmt, ", ")?
-                    }
-                    write!(fmt, "expecting ")?;
-                    join(fmt, expect.iter(), "or")?
-                }
-                Ok(())
             },
-            Messages::Message(msgs) => join(fmt, msgs.iter(), "and"),
-            Messages::Custom(m) => m.fmt(fmt),
+            StdErrorMessage::Expected(expected) => {
+                if !self.is_message() {
+                    self.expected.insert(expected);
+                }
+            },
+            StdErrorMessage::Message(StdMessage::Format(fmt)) => {
+                self.unexpected = None;
+                self.expected.clear();
+                self.messages.insert(fmt);
+            },
+            StdErrorMessage::Message(StdMessage::Error(err)) => {
+                self.unexpected = None;
+                self.expected.clear();
+                self.errors.push(err);
+            },
+        }
+    }
+
+    #[inline(always)]
+    fn warn(&mut self, start: Option<I::Position>, end: I::Position, warn: Self::Warn) {
+        self.recovered.push(Ranged { start, end, item: StdRecovered::Warn { message: warn } })
+    }
+
+    #[inline(always)]
+    fn save(&mut self) {
+        match self.end.take() {
+            None => (),
+            Some(end) => {
+                if self.messages.is_empty() {
+                    self.recovered.push(Ranged {
+                        start: self.start.take(),
+                        end,
+                        item: StdRecovered::Trivial {
+                            unexpected: self.unexpected.take(),
+                            expected: self.expected.drain().collect(),
+                        },
+                    });
+                } else {
+                    self.recovered.push(Ranged {
+                        start: self.start.take(),
+                        end,
+                        item: StdRecovered::Fail {
+                            messages: self.messages.drain().collect(),
+                            errors: self.errors.drain(..).collect(),
+                        },
+                    })
+                }
+            },
         }
     }
 }
-impl<M: std::error::Error> std::error::Error for Messages<M> {}
 
+#[inline(always)]
 fn join(f: &mut fmt::Formatter, mut xs: impl Iterator<Item = impl Display>, conj: impl Display) -> fmt::Result {
     match xs.next() {
         None => Ok(()),
@@ -269,5 +415,63 @@ fn join(f: &mut fmt::Formatter, mut xs: impl Iterator<Item = impl Display>, conj
                 },
             }
         },
+    }
+}
+
+pub enum StdParseErrorDisplay<'a, Token> {
+    Trivial {
+        unexpected: Option<&'a StdToken<Token, Cow<'static, str>>>,
+        expected: Either<&'a [StdToken<Token, Cow<'static, str>>], &'a HashSet<StdToken<Token, Cow<'static, str>>>>,
+    },
+    Fail {
+        messages: Either<&'a [Cow<'static, str>], &'a HashSet<Cow<'static, str>>>,
+        errors: &'a [Box<dyn ErrorTrait>],
+    },
+    Warn {
+        message: StdMessage<&'a str, &'a dyn ErrorTrait>,
+    },
+}
+impl<'a, Token: Display> Display for StdParseErrorDisplay<'a, Token> {
+    #[inline(always)]
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Trivial { unexpected: Some(unexpected), expected } => {
+                write!(fmt, "error: unexpected {}", unexpected)?;
+                match expected {
+                    Either::Left(expected) => {
+                        if !expected.is_empty() {
+                            write!(fmt, ", expecting ")?;
+                            join(fmt, expected.iter(), "or")?;
+                        }
+                    },
+                    Either::Right(expected) => {
+                        if !expected.is_empty() {
+                            write!(fmt, ", expecting ")?;
+                            join(fmt, expected.iter(), "or")?;
+                        }
+                    },
+                }
+                Ok(())
+            },
+            Self::Trivial { unexpected: None, expected } => {
+                write!(fmt, "error: expecting ")?;
+                match expected {
+                    Either::Left(expected) => join(fmt, expected.iter(), "or"),
+                    Either::Right(expected) => join(fmt, expected.iter(), "or"),
+                }
+            },
+            Self::Fail { messages, errors } => {
+                write!(fmt, "error: ")?;
+                match messages {
+                    Either::Left(messages) => {
+                        join(fmt, messages.iter().map(Either::Left).chain(errors.iter().map(Either::Right)), "and")
+                    },
+                    Either::Right(messages) => {
+                        join(fmt, messages.iter().map(Either::Left).chain(errors.iter().map(Either::Right)), "and")
+                    },
+                }
+            },
+            Self::Warn { message } => write!(fmt, "warning: {}", message),
+        }
     }
 }

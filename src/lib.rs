@@ -4,16 +4,16 @@ A parser combinator with additional operations on procedures.
 A parser combinator is a mechanism that allows you to combine small syntactic elements to define a larger syntax, which can then be parse directly.
 
 ```
-use chasa::prelude::*;
+use chasa::char::prelude::*;
 // It reads a number of letters (numbers) from 0 to 9,
 let num = one_of('0'..='9').many1::<String>()
 // Interpreted as a number, errors are reported as a message.
-    .and_then(|str| str.parse::<u32>().map_err(message));
+    .and_then(|str| str.parse::<u32>().map_err(error).map_err(message));
 
 // Multiply by something separated by '*' and
-let prod = num.sep_fold1(char('*'), |a,_,b| a * b);
+let prod = num.sep_reduce(char('*'), |a,_,b| a * b);
 // Then add the '+' separator to it.
-let sum = prod.sep_fold1(char('+'), |a,_,b| a + b);
+let sum = prod.sep_reduce(char('+'), |a,_,b| a + b);
 // Can parse simple addition and multiplication expressions.
 assert_eq!(sum.parse_ok("10*10*10+9*9*9"), Some(1729));
 ```
@@ -24,13 +24,13 @@ To define and re-use the syntax recursively, use a function (which implements th
 
 In the following example, `PatMv` is a special case alias for `ParserOnce`.
 ```
-use chasa::char::{self, prelude::*};
+use chasa::{char, char::prelude::*};
 #[derive(Debug, PartialEq, Eq)]
 enum SExp {
     Term(String),
     List(Vec<SExp>),
 }
-fn sexp_like<I: Input>() -> impl Pat<I, SExp> {
+fn sexp_like<'a>() -> impl Pat<&'a str, SExp> {
     // `run` prevents type recursion, but does not Box
     let term = satisfy(|c| !char::is_space(c) && c != &'(' && c != &')').many1();
     term.map(SExp::Term).or(run(sexp_like).sep(ws1).between(char('('), char(')')).map(SExp::List))
@@ -75,14 +75,14 @@ enum JSON {
     Null,
 }
 
-fn json_parser<I: Input>() -> impl Pat<I, JSON> {
+fn json_parser<'a>() -> impl Pat<&'a str, JSON> {
     any.case(|c, k| match c {
         '{' => k
             .then(
                 char('"')
                     .right(string_char.many_with(|iter| iter.map_while(|x| x).collect::<String>()))
                     .between(whitespace, whitespace)
-                    .bind(|key| char(':').right(json_parser).map_mv(move |value| (key, value)))
+                    .bind(|key| char(':').right(run(json_parser)).map_once(move |value: JSON| (key, value)))
                     .sep(char(',')),
             )
             .left(char('}'))
@@ -94,57 +94,57 @@ fn json_parser<I: Input>() -> impl Pat<I, JSON> {
         't' => k.then(str("rue").to(JSON::True)),
         'f' => k.then(str("alse").to(JSON::False)),
         'n' => k.then(str("ull").to(JSON::Null)),
-        c => k.fail(unexpect(c)),
+        c => k.fail(unexpected(token(c))),
     })
     .between(whitespace, whitespace)
 }
 
-fn whitespace<I: Input>() -> impl Pat<I, ()> {
+fn whitespace<'a>() -> impl Pat<&'a str, ()> {
     one_of("\t\r\n ").skip_many()
 }
 
-fn string_char<I: Input>() -> impl Pat<I, Option<char>> {
+fn string_char<'a>() -> impl Pat<&'a str, Option<char>> {
     any.case(|c, k| match c {
-        '\\' => {
-            k.then(any.case(|c, k| {
-                match c {
-                    '"' => k.to(Some('\"')),
-                    '\\' => k.to(Some('\\')),
-                    '/' => k.to(Some('/')),
-                    'b' => k.to(Some('\x08')),
-                    'f' => k.to(Some('\x0C')),
-                    'n' => k.to(Some('\n')),
-                    'r' => k.to(Some('\r')),
-                    't' => k.to(Some('\t')),
-                    'u' => k
-                        .then(satisfy(|c| matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F')).repeat::<String, _>(4).and_then(|str| {
-                            char::from_u32(u32::from_str_radix(&str, 16).map_err(message)?).ok_or(unexpect("invalid unicode char"))
-                        }))
-                        .map(Some),
-                    c => k.fail(unexpect(c)),
-                }
-            }))
-        },
+        '\\' => k.then(any.case(|c, k| {
+            match c {
+                '"' => k.to(Some('\"')),
+                '\\' => k.to(Some('\\')),
+                '/' => k.to(Some('/')),
+                'b' => k.to(Some('\x08')),
+                'f' => k.to(Some('\x0C')),
+                'n' => k.to(Some('\n')),
+                'r' => k.to(Some('\r')),
+                't' => k.to(Some('\t')),
+                'u' => k
+                    .then(
+                        satisfy(|c| matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F'))
+                            .repeat::<String, _>(4)
+                            .and_then(|str| u32::from_str_radix(&str, 16).map_err(|e| message(error(e))))
+                            .and_then(|int| char::from_u32(int).ok_or(unexpected(format("invalid unicode char")))),
+                    )
+                    .map(Some),
+                c => k.fail(unexpected(token(c))),
+            }
+        })),
         '"' => k.to(None),
         c => k.to(Some(c)),
     })
 }
 
-fn num_parser<I: Input>(c: char) -> impl PatMv<I, f64> {
+fn num_parser<'a>(c: char) -> impl ParserOnce<&'a str, f64> {
     let digit = one_of('0'..='9');
-    extend_with_str(
-        c.to_string(),
+    extend_with_str(c.to_string(), {
         skip_chain((
-            parser_mv(move |k| match c {
+            parser_once(move |k| match c {
                 '0' => k.done(),
                 '1'..='9' => k.then(digit.skip_many()),
-                c => k.fail(unexpect(c)),
+                c => k.fail(unexpected(token(c))),
             }),
             char('.').right(digit.skip_many1()).or_not(),
             one_of("eE").right(one_of("+-").or_not()).right(digit.skip_many1()).or_not(),
-        )),
-    )
-    .and_then_mv(|(_, str)| str.parse::<f64>().map_err(message))
+        ))
+    })
+    .and_then_once(|(_, str)| str.parse::<f64>().map_err(|e| message(error(e))))
 }
 
 assert_eq!(
@@ -165,27 +165,28 @@ pub mod error;
 pub mod fold;
 pub mod input;
 pub mod many;
-pub mod prim;
 pub mod parser;
+pub mod prim;
+mod using_macros;
 mod util;
 
 pub mod prelude {
     #[doc(inline)]
-    pub use crate::combi::{before, chain, choice, extend_with_str, not_followed_by, pure_or, skip_chain, tuple};
+    pub use super::combi::{before, chain, choice, extend_with_str, not_followed_by, pure_or, skip_chain, tuple};
     #[doc(inline)]
-    pub use crate::error::{message, message_with, unexpect, unexpect_with};
+    pub use super::error::{error, expected, format, message, token, unexpected, ParseError};
     #[doc(inline)]
-    pub use crate::fold::{fold, fold1, sep_fold, sep_fold1, tail_rec};
+    pub use super::fold::{fold, fold1, sep_extend, sep_extend1, sep_fold, sep_fold1, sep_reduce, tail_rec};
     #[doc(inline)]
-    pub use crate::input::Input;
+    pub use super::input::{pos_str, Input};
     #[doc(inline)]
-    pub use crate::many::{many, many1, take};
+    pub use super::many::{many, many1, take};
     #[doc(inline)]
-    pub use crate::prim::{
-        any, char, config, eoi, fail, get_state, local_state, no_state, none_of, one_of, parser, parser_mv, pos, pure,
-        satisfy, satisfy_map, set_config, set_state, state, str,
+    pub use super::prim::{
+        any, char, config, eoi, local_state, no_state, none_of, one_of, parser, parser_once, pos, pure, satisfy,
+        satisfy_map, satisfy_map_once, satisfy_once, set_config, state, str,
     };
     #[doc(inline)]
-    pub use crate::parser::{Parser, ParserOnce, Pat, PatMv, SimpleParser};
-    pub use crate::util::{run, run_mv};
+    pub use super::traits::{Parser, ParserOnce, Pat};
+    pub use super::util::{run, run_once};
 }

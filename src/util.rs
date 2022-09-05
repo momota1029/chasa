@@ -1,56 +1,100 @@
-use std::{fmt::Display, ops::Bound};
+use super::error::ParseError;
 
-use crate::{
-    error::{Builder as Eb, LazyError, CustomBuilder as Cb},
-    input::Input,
-    input::IntoChars,
-    prim,
-    parser::{ICont, IOk, IResult, Parser, ParserOnce},
+use {
+    super::{
+        input::Input,
+        traits::{Args, Parser, ParserOnce},
+    },
+    std::{ops::Bound, ptr::NonNull},
 };
 
-#[inline]
-pub(crate) fn run_drop<I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>, T>(
-    p: P, cont: ICont<I, C, S, M>, dropped: T,
-) -> (IResult<Output, I, S, M>, Option<T>) {
-    let ICont { ok, config, drop } = cont;
-    let mut dropped = Some(dropped);
-    let res = p.run_once(ICont {
-        ok: IOk { cutted: false, ..ok },
-        config,
-        drop: &mut || {
-            if dropped.is_some() {
-                dropped = None;
-                drop()
-            }
-        },
-    });
-    (res, dropped)
+pub struct Consume<'a, T>(ResourceList<'a, T>); // 実装の隠蔽
+impl<'a, T> Consume<'a, T> {
+    #[inline]
+    pub fn new() -> Self {
+        Self(ResourceList::Nil)
+    }
+    #[inline]
+    pub fn cons<O>(&mut self, item: T, f: impl FnOnce(&mut Consume<T>) -> O) -> (O, Option<T>) {
+        let hd = Some(item);
+        let res = f(&mut Consume(ResourceList::ResourceCons { hd: (&hd).into(), tl: (&self.0).into() }));
+        (res, hd)
+    }
+    #[inline]
+    pub fn drop_test<O>(&mut self, f: impl FnOnce(&mut Consume<T>) -> O) -> (O, bool) {
+        let flag = false;
+        let res = f(&mut Consume(ResourceList::DropTest { hd: (&flag).into(), tl: (&self.0).into() }));
+        (res, flag)
+    }
+    #[inline]
+    pub fn wrap<S, O>(&mut self, f: impl FnOnce(&mut Consume<S>) -> O) -> O {
+        f(&mut Consume(ResourceList::DropWrap(&mut move || self.drop())))
+    }
+    #[inline]
+    pub fn drop(&mut self) {
+        self.0.drop()
+    }
 }
 
-#[inline(always)]
-pub fn run_satisfy<I: Input<Item = impl Display + 'static>, M: Cb, O>(
-    input: &mut I, drop: &mut dyn FnMut(), cutted: bool, f: impl FnOnce(I::Item) -> Result<O, I::Item>,
-) -> Result<O, LazyError<I, M>> {
-    if cutted {
-        drop()
-    }
-    let (index, pos) = (input.index(), input.pos());
-    match input.next() {
-        None => Err(Eb::unexpected_eoi().at::<I>(index, pos, None)),
-        Some(Err(e)) => Err(Eb::message(e).at::<I>(index, pos, None)),
-        Some(Ok(item)) => match f(item) {
-            Ok(o) => {
-                drop();
-                Ok(o)
+// DropWrapの型を詳細にしたような動きしかしないので安全だが、各要素を隠蔽する必要があったのかは疑問
+enum ResourceList<'a, T> {
+    Nil,
+    DropWrap(&'a mut dyn FnMut()),
+    ResourceCons { hd: NonNull<Option<T>>, tl: NonNull<ResourceList<'a, T>> },
+    DropTest { hd: NonNull<bool>, tl: NonNull<ResourceList<'a, T>> },
+}
+impl<'a, T> ResourceList<'a, T> {
+    fn drop(&mut self) {
+        match std::mem::replace(self, Self::Nil) {
+            Self::Nil => (),
+            Self::DropWrap(f) => f(),
+            Self::ResourceCons { mut hd, mut tl } => unsafe {
+                if hd.as_ref().is_some() {
+                    *hd.as_mut() = None;
+                    tl.as_mut().drop()
+                }
             },
-            Err(item) => Err(Eb::unexpected(item).at::<I>(input.index(), pos, Some(input.pos()))),
-        },
+            Self::DropTest { mut hd, mut tl } => unsafe {
+                if !*hd.as_ref() {
+                    *hd.as_mut() = true;
+                    tl.as_mut().drop()
+                }
+            },
+        }
     }
 }
 
-/**
-Currently, Range cannot be copied, so one_of cannot be copied either. Countermeasure.
-*/
+pub trait IntoChars {
+    type Item;
+    type Iterator: Iterator<Item = Self::Item>;
+    fn into_chars(self) -> Self::Iterator;
+}
+impl<'a> IntoChars for &'a String {
+    type Item = char;
+    type Iterator = std::str::Chars<'a>;
+    #[inline]
+    fn into_chars(self) -> Self::Iterator {
+        self.chars()
+    }
+}
+impl<'a> IntoChars for &'a str {
+    type Item = char;
+    type Iterator = std::str::Chars<'a>;
+    #[inline]
+    fn into_chars(self) -> Self::Iterator {
+        self.chars()
+    }
+}
+impl<'a, T: Clone> IntoChars for &'a [T] {
+    type Item = T;
+    type Iterator = std::iter::Cloned<std::slice::Iter<'a, T>>;
+    #[inline]
+    fn into_chars(self) -> Self::Iterator {
+        self.into_iter().cloned()
+    }
+}
+
+/// Currently, Range cannot be copied, so one_of cannot be copied either. Countermeasure.
 pub trait CharsOrRange<Item> {
     type To;
     fn to(self) -> Self::To;
@@ -127,14 +171,36 @@ impl<T> RangeWithOrd<T> for std::ops::RangeFull {
     }
 }
 
-#[inline(always)]
-pub fn run<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>>(parser: P) -> impl Parser<I, Output, C, S, M> {
-    prim::parser(move |k| k.then(parser.to_ref()))
+struct FromFunc<F>(F);
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, F: FnOnce(Args<I, E, C, S>) -> Option<O>> ParserOnce<I, O, E, C, S>
+    for FromFunc<F>
+{
+    #[inline(always)]
+    fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {
+        self.0(args)
+    }
+}
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, F: FnMut(Args<I, E, C, S>) -> Option<O>> Parser<I, O, E, C, S>
+    for FromFunc<F>
+{
+    #[inline(always)]
+    fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
+        self.0(args)
+    }
 }
 
+/// Hides recursive parser types and size ambiguity.
 #[inline(always)]
-pub fn run_mv<I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>>(
+pub fn run<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>>(
+    mut parser: P,
+) -> impl Parser<I, O, E, C, S> {
+    FromFunc(move |k: Args<I, E, C, S>| parser.run(k))
+}
+
+/// Hides recursive parser types and size ambiguity. It does not matter if this parser has ownership.
+#[inline(always)]
+pub fn run_once<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>>(
     parser: P,
-) -> impl ParserOnce<I, Output, C, S, M> {
-    prim::parser_mv(move |k| k.then(parser))
+) -> impl ParserOnce<I, O, E, C, S> {
+    FromFunc(move |k: Args<I, E, C, S>| parser.run_once(k))
 }
