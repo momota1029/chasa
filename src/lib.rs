@@ -20,7 +20,7 @@ assert_eq!(sum.parse_ok("10*10*10+9*9*9"), Some(1729));
 
 Like the relationship between `Fn` and `FnOnce`, we have `Parser` and `ParserOnce` and write a parser to manipulate the iterator.
 
-To define and re-use the syntax recursively, use a function (which implements the [`Parser`] trait) that returns `impl `[`ParserOnce`].
+To define and re-use the syntax recursively, use a function (which implements the [Parser](prelude::Parser) trait) that returns `impl `[ParserOnce](prelude::ParserOnce).
 
 In the following example, `PatMv` is a special case alias for `ParserOnce`.
 ```
@@ -182,11 +182,11 @@ pub mod prelude {
     #[doc(inline)]
     pub use super::many::{many, many1, take};
     #[doc(inline)]
+    pub use super::parser::{Parser, ParserOnce, Pat};
+    #[doc(inline)]
     pub use super::prim::{
         any, char, config, eoi, local_state, no_state, none_of, one_of, parser, parser_once, pos, pure, satisfy,
         satisfy_map, satisfy_map_once, satisfy_once, set_config, state, str,
     };
-    #[doc(inline)]
-    pub use super::traits::{Parser, ParserOnce, Pat};
     pub use super::util::{run, run_once};
 }

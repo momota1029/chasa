@@ -1,7 +1,7 @@
 use super::{
     error::{self, ParseError},
+    parser::{Parser, ParserOnce},
     prim::{char, no_state, satisfy, satisfy_map},
-    traits::{Parser, ParserOnce},
 };
 
 pub mod prelude {
@@ -23,12 +23,12 @@ pub mod prelude {
     #[doc(inline)]
     pub use super::super::many::{many, many1, take};
     #[doc(inline)]
+    pub use super::super::parser::{Parser, ParserOnce, Pat};
+    #[doc(inline)]
     pub use super::super::prim::{
         any, char, config, eoi, local_state, no_state, none_of, one_of, parser, parser_once, pos, pure, satisfy,
         satisfy_map, satisfy_map_once, satisfy_once, set_config, state, str,
     };
-    #[doc(inline)]
-    pub use super::super::traits::{Parser, ParserOnce, Pat};
     pub use super::super::util::{run, run_once};
 }
 

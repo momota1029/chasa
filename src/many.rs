@@ -141,7 +141,7 @@ impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I
 
 /// It iterates through a sequence of parses, or does not parse if dropped.
 /// A failure that does not consume input will cause the iterator to terminate, a failure that consumes it will cause the whole parser to fail.
-/// The required [`ParserIterator<P>`] argument to `F` is simply an iterator that returns `P::Output`.
+/// The required [`ManyIterator<P>`] argument to `F` is simply an iterator that returns `P::Output`.
 /// # Example
 /// ```
 /// use chasa::prelude::*;
@@ -454,7 +454,7 @@ impl<
 ///
 /// A failure that does not consume input will terminate the iterator, a failure that consumes input will cause the entire iterator to fail.
 ///
-/// The [`ParserSepIterator<P,Q>`] argument, required for `F`, is simply an iterator that returns `P:Output`.
+/// The [`SepIterator<P,Q>`] argument, required for `F`, is simply an iterator that returns `P:Output`.
 ///
 /// See also [`ManyWith`] and [`Sep`]
 /// # Example

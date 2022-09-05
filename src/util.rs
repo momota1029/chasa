@@ -3,7 +3,7 @@ use super::error::ParseError;
 use {
     super::{
         input::Input,
-        traits::{Args, Parser, ParserOnce},
+        parser::{Args, Parser, ParserOnce},
     },
     std::{ops::Bound, ptr::NonNull},
 };
