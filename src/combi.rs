@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{borrow::Cow, marker::PhantomData};
 
 use either::Either;
 
@@ -13,8 +13,6 @@ use super::{
     prim::{pure, Pure},
     util::Consume,
 };
-use std::borrow::Cow;
-
 /**
 If the first argument is Some, return its value; if None, execute the parser of the second argument.
 # Example
@@ -24,7 +22,7 @@ assert_eq!(pure_or(Some("first"), str("second").to("second")).parse_ok("second")
 assert_eq!(pure_or(None, str("second").to("second")).parse_ok("second"), Some("second"))
 ```
 */
-pub fn pure_or<O, I: Input, Old, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, Old, E, C, S>>(
+pub fn pure_or<O, I: Input, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>>(
     o: Option<O>, p: P,
 ) -> Either<Pure<O, I, E, C, S>, P> {
     match o {
@@ -38,7 +36,7 @@ Replace the parser result with the specified value.
 */
 pub struct Value<P, O, Old>(pub(crate) P, pub(crate) O, pub(crate) PhantomData<fn() -> Old>);
 impl<P: Clone, O: Clone, Old> Clone for Value<P, O, Old> {
-    #[inline]
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone(), PhantomData)
     }
@@ -47,7 +45,7 @@ impl<P: Copy, O: Copy, Old> Copy for Value<P, O, Old> {}
 impl<I: Input, Old, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, Old, E, C, S>, O> ParserOnce<I, O, E, C, S>
     for Value<P, O, Old>
 {
-    #[inline]
+    #[inline(always)]
     fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {
         self.0.run_once(args)?;
         Some(self.1)
@@ -56,7 +54,7 @@ impl<I: Input, Old, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, Old, E, C, S
 impl<I: Input, Old, E: ParseError<I>, C, S: Clone, P: Parser<I, Old, E, C, S>, O: Clone> Parser<I, O, E, C, S>
     for Value<P, O, Old>
 {
-    #[inline]
+    #[inline(always)]
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
         self.0.run(args)?;
         Some(self.1.clone())
@@ -71,7 +69,7 @@ impl<I: Input, Old, E: ParseError<I>, C, S: Clone, P: Parser<I, Old, E, C, S>, O
 /// ```
 pub struct Map<P, F, O>(pub(crate) P, pub(crate) F, pub(crate) PhantomData<fn() -> O>);
 impl<P: Clone, F: Clone, O> Clone for Map<P, F, O> {
-    #[inline]
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone(), PhantomData)
     }
@@ -80,7 +78,7 @@ impl<P: Copy, F: Copy, O> Copy for Map<P, F, O> {}
 impl<I: Input, Old, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, Old, E, C, S>, F: FnOnce(Old) -> O, O>
     ParserOnce<I, O, E, C, S> for Map<P, F, Old>
 {
-    #[inline]
+    #[inline(always)]
     fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {
         self.0.run_once(args).map(self.1)
     }
@@ -88,7 +86,7 @@ impl<I: Input, Old, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, Old, E, C, S
 impl<I: Input, Old, E: ParseError<I>, C, S: Clone, P: Parser<I, Old, E, C, S>, F: Fn(Old) -> O, O> Parser<I, O, E, C, S>
     for Map<P, F, Old>
 {
-    #[inline]
+    #[inline(always)]
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
         self.0.run(args).map(&mut self.1)
     }
@@ -109,7 +107,7 @@ impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>, L
 where
     E::Message: From<error::Expected<error::Format<L>>>,
 {
-    #[inline]
+    #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O> {
         match self.0.run_once(args.by_ref()) {
             Some(c) => Some(c),
@@ -126,7 +124,7 @@ impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>, L: Cl
 where
     E::Message: From<error::Expected<error::Format<L>>>,
 {
-    #[inline]
+    #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O> {
         match self.0.run(args.by_ref()) {
             Some(c) => Some(c),
@@ -154,7 +152,7 @@ impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>, L
 where
     E::Message: From<error::Expected<error::Format<L>>>,
 {
-    #[inline]
+    #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O> {
         match self.0.run_once(args.by_ref()) {
             Some(c) => Some(c),
@@ -171,7 +169,7 @@ impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>, L, F:
 where
     E::Message: From<error::Expected<error::Format<L>>>,
 {
-    #[inline]
+    #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O> {
         match self.0.run(args.by_ref()) {
             Some(c) => Some(c),
@@ -196,7 +194,7 @@ assert_eq!(any.bind(|c| char(c)).parse_ok("ab"), None);
 */
 pub struct Bind<P, F, O1>(pub(crate) P, pub(crate) F, pub(crate) PhantomData<fn() -> O1>);
 impl<P: Clone, F: Clone, O1> Clone for Bind<P, F, O1> {
-    #[inline]
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone(), PhantomData)
     }
@@ -215,7 +213,7 @@ impl<
         F: FnOnce(O1) -> P2,
     > ParserOnce<I, O2, E, C, S> for Bind<P1, F, O1>
 {
-    #[inline]
+    #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O2> {
         self.1(self.0.run_once(args.by_ref())?).run_once(args)
     }
@@ -232,7 +230,7 @@ impl<
         F: FnMut(O1) -> P2,
     > Parser<I, O2, E, C, S> for Bind<P1, F, O1>
 {
-    #[inline]
+    #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O2> {
         self.1(self.0.run(args.by_ref())?).run_once(args)
     }
@@ -257,7 +255,7 @@ impl<
         P2: ParserOnce<I, O2, E, C, S>,
     > ParserOnce<I, (O1, O2), E, C, S> for And<P1, P2>
 {
-    #[inline]
+    #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<(O1, O2)> {
         Some((self.0.run_once(args.by_ref())?, self.1.run_once(args)?))
     }
@@ -265,7 +263,7 @@ impl<
 impl<I: Input, O1, O2, E: ParseError<I>, C, S: Clone, P1: Parser<I, O1, E, C, S>, P2: Parser<I, O2, E, C, S>>
     Parser<I, (O1, O2), E, C, S> for And<P1, P2>
 {
-    #[inline]
+    #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<(O1, O2)> {
         Some((self.0.run(args.by_ref())?, self.1.run(args)?))
     }
@@ -283,7 +281,7 @@ assert_eq!(str("chasa").to( ()).left(char(':')).parse_ok("chasa: parser combinat
 */
 pub struct Left<P1, P2, O2>(pub(crate) P1, pub(crate) P2, pub(crate) PhantomData<fn() -> O2>);
 impl<P1: Clone, P2: Clone, O2> Clone for Left<P1, P2, O2> {
-    #[inline]
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone(), PhantomData)
     }
@@ -300,7 +298,7 @@ impl<
         P2: ParserOnce<I, O2, E, C, S>,
     > ParserOnce<I, O1, E, C, S> for Left<P1, P2, O2>
 {
-    #[inline]
+    #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O1> {
         let left = self.0.run_once(args.by_ref());
         self.1.run_once(args)?;
@@ -310,7 +308,7 @@ impl<
 impl<I: Input, O1, O2, E: ParseError<I>, C, S: Clone, P1: Parser<I, O1, E, C, S>, P2: Parser<I, O2, E, C, S>>
     Parser<I, O1, E, C, S> for Left<P1, P2, O2>
 {
-    #[inline]
+    #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O1> {
         let left = self.0.run(args.by_ref());
         self.1.run(args)?;
@@ -328,7 +326,7 @@ impl<I: Input, O1, O2, E: ParseError<I>, C, S: Clone, P1: Parser<I, O1, E, C, S>
 /// ```
 pub struct Right<P1, P2, O1>(pub(crate) P1, pub(crate) P2, pub(crate) PhantomData<O1>);
 impl<P1: Clone, P2: Clone, O1> Clone for Right<P1, P2, O1> {
-    #[inline]
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone(), PhantomData)
     }
@@ -345,7 +343,7 @@ impl<
         P2: ParserOnce<I, O2, E, C, S>,
     > ParserOnce<I, O2, E, C, S> for Right<P1, P2, O1>
 {
-    #[inline]
+    #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O2> {
         self.0.run_once(args.by_ref())?;
         self.1.run_once(args)
@@ -354,7 +352,7 @@ impl<
 impl<I: Input, O1, O2, E: ParseError<I>, C, S: Clone, P1: Parser<I, O1, E, C, S>, P2: Parser<I, O2, E, C, S>>
     Parser<I, O2, E, C, S> for Right<P1, P2, O1>
 {
-    #[inline]
+    #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O2> {
         self.0.run(args.by_ref())?;
         self.1.run(args)
@@ -375,7 +373,7 @@ pub struct Between<P1, P2, P3, O1, O3>(
     pub(crate) PhantomData<fn() -> (O1, O3)>,
 );
 impl<P1: Clone, P2: Clone, P3: Clone, O1, O3> Clone for Between<P1, P2, P3, O1, O3> {
-    #[inline]
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone(), self.2.clone(), PhantomData)
     }
@@ -394,7 +392,7 @@ impl<
         P3: ParserOnce<I, O3, E, C, S>,
     > ParserOnce<I, O2, E, C, S> for Between<P1, P2, P3, O1, O3>
 {
-    #[inline]
+    #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O2> {
         self.0.run_once(args.by_ref())?;
         let center = self.1.run_once(args.by_ref());
@@ -415,7 +413,7 @@ impl<
         P3: Parser<I, O3, E, C, S>,
     > Parser<I, O2, E, C, S> for Between<P1, P2, P3, O1, O3>
 {
-    #[inline]
+    #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O2> {
         self.0.run(args.by_ref())?;
         let center = self.1.run(args.by_ref());
@@ -439,7 +437,7 @@ assert_eq!(p.parse_easy("cba"), Err("error: hello".to_string()));
 */
 pub struct AndThen<P, F, M, O>(pub(crate) P, pub(crate) F, pub(crate) PhantomData<fn() -> (O, M)>);
 impl<P: Clone, F: Clone, M, O> Clone for AndThen<P, F, M, O> {
-    #[inline]
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone(), PhantomData)
     }
@@ -502,7 +500,7 @@ impl<
 // impl<I: Input, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>, O, F: FnOnce(Output) -> Result<O, Eb<M>>>
 //     ParserOnce<I, O, C, S, M> for AndThen<P, F, Output>
 // {
-//     #[inline]
+//     #[inline(always)]
 //     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
 //         let ICont { ok, config, drop } = cont;
 //         let pos = ok.input.pos();
@@ -515,7 +513,7 @@ impl<
 // impl<I: Input, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>, O, F: Fn(Output) -> Result<O, Eb<M>>>
 //     Parser<I, O, C, S, M> for AndThen<P, F, Output>
 // {
-//     #[inline]
+//     #[inline(always)]
 //     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
 //         let ICont { ok, config, drop } = cont;
 //         let pos = ok.input.pos();
@@ -546,7 +544,7 @@ impl<
 /// ```
 pub struct Case<P, F, O, E>(pub(crate) P, pub(crate) F, pub(crate) PhantomData<fn() -> (O, E)>);
 impl<P: Clone, F: Clone, O, E> Clone for Case<P, F, O, E> {
-    #[inline]
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone(), PhantomData)
     }
@@ -722,7 +720,7 @@ pub struct Ranged<P>(pub(crate) P);
 impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>>
     ParserOnce<I, (O, I::Position, I::Position), E, C, S> for Ranged<P>
 {
-    #[inline]
+    #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<(O, I::Position, I::Position)> {
         let pos = args.input.position();
         self.0.run_once(args.by_ref()).map(|o| (o, pos, args.input.position()))
@@ -731,7 +729,7 @@ impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>>
 impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>>
     Parser<I, (O, I::Position, I::Position), E, C, S> for Ranged<P>
 {
-    #[inline]
+    #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<(O, I::Position, I::Position)> {
         let pos = args.input.position();
         self.0.run(args.by_ref()).map(|o| (o, pos, args.input.position()))
@@ -799,7 +797,7 @@ struct InputIter<'a, I: Input> {
 }
 impl<'a, I: Input> Iterator for InputIter<'a, I> {
     type Item = I::Token;
-    #[inline]
+    #[inline(always)]
     fn next(&mut self) -> Option<I::Token> {
         if self.input.position().offset() < self.end {
             self.input.uncons().ok()
@@ -819,13 +817,13 @@ impl<'a, I: Input> Iterator for InputIter<'a, I> {
 /// ```
 #[derive(Clone, Copy)]
 pub struct Before<P>(pub(crate) P);
-#[inline]
+#[inline(always)]
 pub fn before<P>(parser: P) -> Before<P> {
     Before(parser)
 }
 
 impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>> ParserOnce<I, O, E, C, S> for Before<P> {
-    #[inline]
+    #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O> {
         let (input, state) = (args.input.clone(), args.state.clone());
         let res = self.0.run_once(args.by_ref());
@@ -837,7 +835,7 @@ impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>> P
     }
 }
 impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>> Parser<I, O, E, C, S> for Before<P> {
-    #[inline]
+    #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O> {
         let (input, state) = (args.input.clone(), args.state.clone());
         let res = self.0.run(args.by_ref());
@@ -862,27 +860,36 @@ impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>> Parse
 /// ```
 pub struct NotFollowedBy<P, L, O>(pub(crate) P, pub(crate) L, pub(crate) PhantomData<O>);
 impl<P: Clone, L: Clone, O> Clone for NotFollowedBy<P, L, O> {
-    #[inline]
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone(), PhantomData)
     }
 }
 impl<P: Copy, L: Copy, O> Copy for NotFollowedBy<P, L, O> {}
-#[inline]
+#[inline(always)]
 pub fn not_followed_by<P, L: Into<Cow<'static, str>>, O>(parser: P, label: L) -> NotFollowedBy<P, L, O> {
     NotFollowedBy(parser, label, PhantomData)
 }
-impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>, L: Into<Cow<'static, str>>>
-    ParserOnce<I, (), E, C, S> for NotFollowedBy<P, L, O>
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>, L> ParserOnce<I, (), E, C, S>
+    for NotFollowedBy<P, L, O>
+where
+    E::Message: From<error::Unexpected<error::Format<L>>>,
 {
     #[inline(always)]
     fn run_once(self, args: Args<I, E, C, S>) -> Option<()> {
         let Args { input, config, state, consume, error } = args;
+        let start = input.position();
         match consume.cons((input.clone(), state.clone()), |consume| {
             self.0.run_once(Args { input, config, state, consume, error })
         }) {
             (None, None) => None,
-            (Some(_), _) => None,
+            (Some(_), _) => {
+                let end = input.position();
+                if error.add(Some(start), end) {
+                    error.set(error::unexpected(error::format(self.1)).into())
+                }
+                None
+            },
             (None, Some((input_bak, state_bak))) => {
                 *input = input_bak;
                 *state = state_bak;
@@ -891,17 +898,26 @@ impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>, L
         }
     }
 }
-impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>, L: Into<Cow<'static, str>>>
-    Parser<I, (), E, C, S> for NotFollowedBy<P, L, O>
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>, L: Clone> Parser<I, (), E, C, S>
+    for NotFollowedBy<P, L, O>
+where
+    E::Message: From<error::Unexpected<error::Format<L>>>,
 {
     #[inline(always)]
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<()> {
         let Args { input, config, state, consume, error } = args;
+        let start = input.position();
         match consume
             .cons((input.clone(), state.clone()), |consume| self.0.run(Args { input, config, state, consume, error }))
         {
             (None, None) => None,
-            (Some(_), _) => None,
+            (Some(_), _) => {
+                let end = input.position();
+                if error.add(Some(start), end) {
+                    error.set(error::unexpected(error::format(self.1.clone())).into())
+                }
+                None
+            },
             (None, Some((input_bak, state_bak))) => {
                 *input = input_bak;
                 *state = state_bak;

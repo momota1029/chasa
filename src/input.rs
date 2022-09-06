@@ -16,6 +16,17 @@ pub trait Save {
     fn save(&mut self) -> Self::Savepoint;
     fn load(&mut self, savepoint: Self::Savepoint);
 }
+impl<T: Clone> Save for T {
+    type Savepoint = Self;
+    #[inline(always)]
+    fn save(&mut self) -> Self::Savepoint {
+        self.clone()
+    }
+    #[inline(always)]
+    fn load(&mut self, savepoint: Self::Savepoint) {
+        *self = savepoint
+    }
+}
 
 pub trait Position {
     type Offset: Ord;
