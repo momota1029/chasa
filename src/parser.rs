@@ -1,5 +1,7 @@
 use std::{fmt::Display, fmt::Write, hash::Hash, marker::PhantomData};
 
+use crate::many::{ManyBind, SepBind};
+
 use super::{
     combi::{
         And, AndThen, Between, Bind, Case, Cut, GetString, GetStringExtend, Label, LabelWith, Left, Map, Or, OrNot,
@@ -11,7 +13,7 @@ use super::{
         fold, fold1, Extend1Parser, ExtendParser, Fold, Fold1, SepExtend, SepExtend1, SepFold, SepFold1, SepReduce,
     },
     input::{Input, PositionPrinter},
-    many::{many, many1, take, Many, Many1, ManyIterator, ManyWith, Repeat, Sep, Sep1, SepIterator, SepWith},
+    many::{many, many1, take, Many, Many1, ManyIterator, ManyMap, Repeat, Sep, Sep1, SepIterator, SepMap},
     prim::MutParser,
     util::{Consume, RangeWithOrd},
 };
@@ -331,11 +333,36 @@ pub trait Parser<
         many1(self)
     }
     #[inline]
-    fn many_with<T, F: Fn(ManyIterator<Self, I, O, E, C, S>) -> T>(self, f: F) -> ManyWith<Self, F, O>
+    fn many_map<T, F: FnMut(ManyIterator<Self, I, O, E, C, S>) -> T>(self, f: F) -> ManyMap<Self, F, O>
     where
         Self: Sized,
     {
-        ManyWith(self, f, PhantomData)
+        ManyMap(self, f, PhantomData)
+    }
+    #[inline]
+    fn many_map_once<T, F: FnOnce(ManyIterator<Self, I, O, E, C, S>) -> T>(self, f: F) -> ManyMap<Self, F, O>
+    where
+        Self: Sized,
+    {
+        ManyMap(self, f, PhantomData)
+    }
+    #[inline]
+    fn many_bind<O2, P: ParserOnce<I, O2, E, C, S>, F: FnMut(ManyIterator<Self, I, O, E, C, S>) -> P>(
+        self, f: F,
+    ) -> ManyBind<Self, F, O>
+    where
+        Self: Sized,
+    {
+        ManyBind(self, f, PhantomData)
+    }
+    #[inline]
+    fn many_bind_once<O2, P: ParserOnce<I, O2, E, C, S>, F: FnOnce(ManyIterator<Self, I, O, E, C, S>) -> P>(
+        self, f: F,
+    ) -> ManyBind<Self, F, O>
+    where
+        Self: Sized,
+    {
+        ManyBind(self, f, PhantomData)
     }
     #[inline]
     fn sep<T: FromIterator<O>, P: Parser<I, U, E, C, S>, U>(self, sep: P) -> Sep<Self, P, T, O, U>
@@ -352,13 +379,52 @@ pub trait Parser<
         Sep1(self, sep, PhantomData)
     }
     #[inline]
-    fn sep_with<T, F: Fn(SepIterator<Self, P, I, O, U, E, C, S>) -> T, P: Parser<I, U, E, C, S>, U>(
+    fn sep_map<T, F: FnMut(SepIterator<Self, P, I, O, U, E, C, S>) -> T, P: Parser<I, U, E, C, S>, U>(
         self, sep: P, f: F,
-    ) -> SepWith<Self, P, F, O, U>
+    ) -> SepMap<Self, P, F, O, U>
     where
         Self: Sized,
     {
-        SepWith(self, sep, f, PhantomData)
+        SepMap(self, sep, f, PhantomData)
+    }
+    #[inline]
+    fn sep_map_once<T, F: FnOnce(SepIterator<Self, P, I, O, U, E, C, S>) -> T, P: Parser<I, U, E, C, S>, U>(
+        self, sep: P, f: F,
+    ) -> SepMap<Self, P, F, O, U>
+    where
+        Self: Sized,
+    {
+        SepMap(self, sep, f, PhantomData)
+    }
+    #[inline]
+    fn sep_bind<
+        O2,
+        F: FnMut(SepIterator<Self, P, I, O, T, E, C, S>) -> Q,
+        P: Parser<I, T, E, C, S>,
+        T,
+        Q: ParserOnce<I, O2, E, C, S>,
+    >(
+        self, sep: P, f: F,
+    ) -> SepBind<Self, P, F, O, T>
+    where
+        Self: Sized,
+    {
+        SepBind(self, sep, f, PhantomData)
+    }
+    #[inline]
+    fn sep_bind_once<
+        O2,
+        F: FnOnce(SepIterator<Self, P, I, O, T, E, C, S>) -> Q,
+        P: Parser<I, T, E, C, S>,
+        T,
+        Q: ParserOnce<I, O2, E, C, S>,
+    >(
+        self, sep: P, f: F,
+    ) -> SepBind<Self, P, F, O, T>
+    where
+        Self: Sized,
+    {
+        SepBind(self, sep, f, PhantomData)
     }
     #[inline(always)]
     fn repeat<T: FromIterator<O>, N: RangeWithOrd<usize>>(self, count: N) -> Repeat<Self, T, O>

@@ -80,7 +80,7 @@ fn json_parser<'a>() -> impl Pat<&'a str, JSON> {
         '{' => k
             .then(
                 char('"')
-                    .right(string_char.many_with(|iter| iter.map_while(|x| x).collect::<String>()))
+                    .right(string_char.many_map(|iter| iter.map_while(|x| x).collect::<String>()))
                     .between(whitespace, whitespace)
                     .bind(|key| char(':').right(run(json_parser)).map_once(move |value: JSON| (key, value)))
                     .sep(char(',')),
@@ -88,7 +88,7 @@ fn json_parser<'a>() -> impl Pat<&'a str, JSON> {
             .left(char('}'))
             .map(JSON::Object),
         '[' => k.then(json_parser.sep(char(','))).left(char(']')).map(JSON::Array),
-        '"' => k.then(string_char.many_with(|iter| iter.map_while(|x| x).collect())).map(JSON::String),
+        '"' => k.then(string_char.many_map(|iter| iter.map_while(|x| x).collect())).map(JSON::String),
         '-' => k.then(any).bind(num_parser).map(|n| JSON::Number(-n)),
         c @ '0'..='9' => k.then(num_parser(c)).map(JSON::Number),
         't' => k.then(str("rue").to(JSON::True)),
@@ -186,7 +186,7 @@ pub mod prelude {
     #[doc(inline)]
     pub use super::prim::{
         any, char, config, eoi, local_state, no_state, none_of, one_of, parser, parser_once, pos, pure, satisfy,
-        satisfy_map, satisfy_map_once, satisfy_once, set_config, state, str,
+        satisfy_map, satisfy_map_once, satisfy_once, set_config, state, state_bind, str,
     };
     pub use super::util::{run, run_once};
 }

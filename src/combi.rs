@@ -26,7 +26,7 @@ assert_eq!(pure_or(None, str("second").to("second")).parse_ok("second"), Some("s
 */
 pub fn pure_or<O, I: Input, Old, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, Old, E, C, S>>(
     o: Option<O>, p: P,
-) -> Either<Pure<O>, P> {
+) -> Either<Pure<O, I, E, C, S>, P> {
     match o {
         Some(o) => Either::Left(pure(o)),
         None => Either::Right(p),

@@ -68,15 +68,8 @@ impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I
 {
     #[inline(always)]
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
-        let Args { input, config, state, consume, error } = args;
         let mut failed = false;
-        let o = ManyIterator {
-            parser: &mut self.0,
-            args: Args { input, config, state, consume, error },
-            failed: &mut failed,
-            _marker: PhantomData,
-        }
-        .collect();
+        let o = ManyIterator { parser: &mut self.0, args, failed: &mut failed, _marker: PhantomData }.collect();
         if failed {
             None
         } else {
@@ -121,15 +114,9 @@ impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I
     #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O> {
         let first = self.0.run(args.by_ref())?;
-        let Args { input, config, state, consume, error } = args;
         let mut failed = false;
         let o = iter::once(first)
-            .chain(ManyIterator {
-                parser: &mut self.0,
-                args: Args { input, config, state, consume, error },
-                failed: &mut failed,
-                _marker: PhantomData,
-            })
+            .chain(ManyIterator { parser: &mut self.0, args, failed: &mut failed, _marker: PhantomData })
             .collect();
         if failed {
             None
@@ -146,30 +133,31 @@ impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I
 /// ```
 /// use chasa::prelude::*;
 /// assert_eq!(
-///     any.many_with(|iter| iter.enumerate().collect()).parse_ok("abcde"),
+///     any.many_map(|iter| iter.enumerate().collect()).parse_ok("abcde"),
 ///     Some(vec![(0,'a'),(1,'b'),(2,'c'),(3,'d'),(4,'e')])
 /// );
 /// assert_eq!(
-///     any.many_with(|iter| iter.take(2).collect())
+///     any.many_map(|iter| iter.take(2).collect())
 ///         .and(char('c'))
 ///     .parse_ok("abcde"), Some(("ab".to_string(), 'c'))
 /// );
 /// assert_eq!(
-///     any.and(char('a')).many_with(|iter| iter.collect()).parse_ok("baca"),
+///     any.and(char('a')).many_map(|iter| iter.collect()).parse_ok("baca"),
 ///     Some(vec![('b','a'),('c','a')])
 /// );
 /// assert_eq!(
-///     any.and(char('a')).many_with(|iter| iter.collect::<Vec<_>>()).parse_ok("bacahh"),
+///     any.and(char('a')).many_map(|iter| iter.collect::<Vec<_>>()).parse_ok("bacahh"),
 ///     None
 /// );
 /// ```
-pub struct ManyWith<P, F, T>(pub(crate) P, pub(crate) F, pub(crate) PhantomData<fn() -> T>);
-impl<P: Clone, F: Clone, T> Clone for ManyWith<P, F, T> {
+pub struct ManyMap<P, F, T>(pub(crate) P, pub(crate) F, pub(crate) PhantomData<fn() -> T>);
+impl<P: Clone, F: Clone, T> Clone for ManyMap<P, F, T> {
     #[inline(always)]
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone(), PhantomData)
     }
 }
+impl<P: Copy, F: Copy, T> Copy for ManyMap<P, F, T> {}
 impl<
         I: Input,
         O,
@@ -179,18 +167,12 @@ impl<
         S: Clone,
         P: Parser<I, T, E, C, S>,
         F: FnOnce(ManyIterator<P, I, T, E, C, S>) -> O,
-    > ParserOnce<I, O, E, C, S> for ManyWith<P, F, T>
+    > ParserOnce<I, O, E, C, S> for ManyMap<P, F, T>
 {
     #[inline(always)]
     fn run_once(mut self, args: Args<I, E, C, S>) -> Option<O> {
-        let Args { input, config, state, consume, error } = args;
         let mut failed = false;
-        let o = self.1(ManyIterator {
-            parser: &mut self.0,
-            args: Args { input, config, state, consume, error },
-            failed: &mut failed,
-            _marker: PhantomData,
-        });
+        let o = self.1(ManyIterator { parser: &mut self.0, args, failed: &mut failed, _marker: PhantomData });
         if failed {
             None
         } else {
@@ -207,18 +189,12 @@ impl<
         S: Clone,
         P: Parser<I, T, E, C, S>,
         F: FnMut(ManyIterator<P, I, T, E, C, S>) -> O,
-    > Parser<I, O, E, C, S> for ManyWith<P, F, T>
+    > Parser<I, O, E, C, S> for ManyMap<P, F, T>
 {
     #[inline(always)]
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
-        let Args { input, config, state, consume, error } = args;
         let mut failed = false;
-        let o = self.1(ManyIterator {
-            parser: &mut self.0,
-            args: Args { input, config, state, consume, error },
-            failed: &mut failed,
-            _marker: PhantomData,
-        });
+        let o = self.1(ManyIterator { parser: &mut self.0, args, failed: &mut failed, _marker: PhantomData });
         if failed {
             None
         } else {
@@ -227,7 +203,72 @@ impl<
     }
 }
 
-/// an iterator that returns `P::Output`. It can only be used locally within [`SepWith`].
+pub struct ManyBind<P, F, O1>(pub(crate) P, pub(crate) F, pub(crate) PhantomData<fn() -> O1>);
+impl<P: Clone, F: Clone, O1> Clone for ManyBind<P, F, O1> {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone(), PhantomData)
+    }
+}
+impl<P: Copy, F: Copy, O1> Copy for ManyBind<P, F, O1> {}
+impl<
+        I: Input,
+        O1,
+        O2,
+        E: ParseError<I>,
+        C,
+        S: Clone,
+        P: Parser<I, O1, E, C, S>,
+        Q: ParserOnce<I, O2, E, C, S>,
+        F: FnOnce(ManyIterator<P, I, O1, E, C, S>) -> Q,
+    > ParserOnce<I, O2, E, C, S> for ManyBind<P, F, O1>
+{
+    #[inline(always)]
+    fn run_once(mut self, mut args: Args<I, E, C, S>) -> Option<O2> {
+        let mut failed = false;
+        let q = self.1(ManyIterator {
+            parser: &mut self.0,
+            args: args.by_ref(),
+            failed: &mut failed,
+            _marker: PhantomData,
+        });
+        if failed {
+            None
+        } else {
+            q.run_once(args)
+        }
+    }
+}
+impl<
+        I: Input,
+        O1,
+        O2,
+        E: ParseError<I>,
+        C,
+        S: Clone,
+        P: Parser<I, O1, E, C, S>,
+        Q: ParserOnce<I, O2, E, C, S>,
+        F: FnMut(ManyIterator<P, I, O1, E, C, S>) -> Q,
+    > Parser<I, O2, E, C, S> for ManyBind<P, F, O1>
+{
+    #[inline(always)]
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O2> {
+        let mut failed = false;
+        let q = self.1(ManyIterator {
+            parser: &mut self.0,
+            args: args.by_ref(),
+            failed: &mut failed,
+            _marker: PhantomData,
+        });
+        if failed {
+            None
+        } else {
+            q.run_once(args)
+        }
+    }
+}
+
+/// an iterator that returns `P::Output`. It can only be used locally within [`SepMap`].
 pub struct SepIterator<
     'a,
     'b,
@@ -456,31 +497,31 @@ impl<
 ///
 /// The [`SepIterator<P,Q>`] argument, required for `F`, is simply an iterator that returns `P:Output`.
 ///
-/// See also [`ManyWith`] and [`Sep`]
+/// See also [`ManyMap`] and [`Sep`]
 /// # Example
 /// ```
 /// use chasa::prelude::*;
 /// let d = one_of('0'..='9').and_then(|c: char| c.to_string().parse::<isize>().map_err(error).map_err(message));
 /// assert_eq!(
-///     d.sep_with(char(','), |iter| iter.take(2).collect())
+///     d.sep_map(char(','), |iter| iter.take(2).collect())
 ///         .and(str(",3,4,5").to(true))
 ///         .parse_ok("1,2,3,4,5"),
 ///     Some((vec![1,2], true))
 /// );
 /// assert_eq!(
-///     d.sep_with(char(','), |iter| iter.collect())
+///     d.sep_map(char(','), |iter| iter.collect())
 ///         .parse_ok("1,2,3,4,"),
 ///     Some(vec![1,2,3,4])
 /// );
 /// ```
-pub struct SepWith<P, Q, F, T, U>(pub(crate) P, pub(crate) Q, pub(crate) F, pub(crate) PhantomData<fn() -> (T, U)>);
-impl<P: Clone, Q: Clone, F: Clone, T, U> Clone for SepWith<P, Q, F, T, U> {
+pub struct SepMap<P, Q, F, T, U>(pub(crate) P, pub(crate) Q, pub(crate) F, pub(crate) PhantomData<fn() -> (T, U)>);
+impl<P: Clone, Q: Clone, F: Clone, T, U> Clone for SepMap<P, Q, F, T, U> {
     #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone(), self.2.clone(), PhantomData)
     }
 }
-impl<P: Copy, Q: Copy, F: Copy, T, U> Copy for SepWith<P, Q, F, T, U> {}
+impl<P: Copy, Q: Copy, F: Copy, T, U> Copy for SepMap<P, Q, F, T, U> {}
 
 impl<
         I: Input,
@@ -493,7 +534,7 @@ impl<
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
         F: FnOnce(SepIterator<P, Q, I, T, U, E, C, S>) -> O,
-    > ParserOnce<I, O, E, C, S> for SepWith<P, Q, F, T, U>
+    > ParserOnce<I, O, E, C, S> for SepMap<P, Q, F, T, U>
 {
     #[inline(always)]
     fn run_once(mut self, args: Args<I, E, C, S>) -> Option<O> {
@@ -529,7 +570,7 @@ impl<
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
         F: FnMut(SepIterator<P, Q, I, T, U, E, C, S>) -> O,
-    > Parser<I, O, E, C, S> for SepWith<P, Q, F, T, U>
+    > Parser<I, O, E, C, S> for SepMap<P, Q, F, T, U>
 {
     #[inline(always)]
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
@@ -551,6 +592,89 @@ impl<
             None
         } else {
             Some(o)
+        }
+    }
+}
+
+pub struct SepBind<P, Q, F, O1, T>(pub(crate) P, pub(crate) Q, pub(crate) F, pub(crate) PhantomData<fn() -> (O1, T)>);
+impl<P: Clone, Q: Clone, F: Clone, O1, T> Clone for SepBind<P, Q, F, O1, T> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone(), self.2.clone(), PhantomData)
+    }
+}
+impl<P: Copy, Q: Copy, F: Copy, O1, T> Copy for SepBind<P, Q, F, O1, T> {}
+impl<
+        I: Input,
+        O1,
+        O2,
+        T,
+        E: ParseError<I>,
+        C,
+        S: Clone,
+        P: Parser<I, O1, E, C, S>,
+        Q: Parser<I, T, E, C, S>,
+        R: ParserOnce<I, O2, E, C, S>,
+        F: FnOnce(SepIterator<P, Q, I, O1, T, E, C, S>) -> R,
+    > ParserOnce<I, O2, E, C, S> for SepBind<P, Q, F, O1, T>
+{
+    #[inline(always)]
+    fn run_once(mut self, mut args: Args<I, E, C, S>) -> Option<O2> {
+        let Args { input, config, state, consume, error } = args.by_ref();
+        let mut failed = false;
+        let r = self.2(SepIterator {
+            item_parser: &mut self.0,
+            sep_parser: &mut self.1,
+            is_first: true,
+            failed: &mut failed,
+            input,
+            config,
+            state,
+            consume,
+            error,
+            _marker: PhantomData,
+        });
+        if failed {
+            None
+        } else {
+            r.run_once(args)
+        }
+    }
+}
+impl<
+        I: Input,
+        O1,
+        O2,
+        T,
+        E: ParseError<I>,
+        C,
+        S: Clone,
+        P: Parser<I, O1, E, C, S>,
+        Q: Parser<I, T, E, C, S>,
+        R: ParserOnce<I, O2, E, C, S>,
+        F: FnMut(SepIterator<P, Q, I, O1, T, E, C, S>) -> R,
+    > Parser<I, O2, E, C, S> for SepBind<P, Q, F, O1, T>
+{
+    #[inline(always)]
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O2> {
+        let Args { input, config, state, consume, error } = args.by_ref();
+        let mut failed = false;
+        let r = self.2(SepIterator {
+            item_parser: &mut self.0,
+            sep_parser: &mut self.1,
+            is_first: true,
+            failed: &mut failed,
+            input,
+            config,
+            state,
+            consume,
+            error,
+            _marker: PhantomData,
+        });
+        if failed {
+            None
+        } else {
+            r.run_once(args)
         }
     }
 }

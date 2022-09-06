@@ -11,6 +11,12 @@ pub trait Input: Clone {
     fn position(&self) -> Self::Position;
 }
 
+pub trait Save {
+    type Savepoint;
+    fn save(&mut self) -> Self::Savepoint;
+    fn load(&mut self, savepoint: Self::Savepoint);
+}
+
 pub trait Position {
     type Offset: Ord;
     fn offset(&self) -> Self::Offset;
