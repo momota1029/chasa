@@ -8,7 +8,7 @@ use either::Either;
 
 use super::{
     cont::Cont,
-    error::{self, expected, unexpected, EndOfInput, Expected, ParseError, Unexpected},
+    error::{self, expected, EndOfInput, Expected, ParseError},
     input::Input,
     parser::{Args, Parser, ParserOnce},
     util::{CharsOrRange, IntoChars},
@@ -219,7 +219,7 @@ pub fn eoi<I, E, C, S>() -> EoI<I, E, C, S> {
 }
 impl<I: Input, E: ParseError<I>, C, S: Clone> ParserOnce<I, (), E, C, S> for EoI<I, E, C, S>
 where
-    E::Message: From<Unexpected<error::Token<I::Token>>> + From<Expected<EndOfInput>>,
+    E::Message: From<Expected<EndOfInput>>,
 {
     #[inline(always)]
     fn run_once(mut self, args: Args<I, E, C, S>) -> Option<()> {
@@ -228,7 +228,7 @@ where
 }
 impl<I: Input, E: ParseError<I>, C, S: Clone> Parser<I, (), E, C, S> for EoI<I, E, C, S>
 where
-    E::Message: From<Unexpected<error::Token<I::Token>>> + From<Expected<EndOfInput>>,
+    E::Message: From<Expected<EndOfInput>>,
 {
     #[inline(always)]
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<()> {
@@ -237,7 +237,7 @@ where
             Err(_) => Some(()),
             Ok(token) => {
                 if args.error.add(None, pos) {
-                    args.error.set(unexpected(error::token(token)).into());
+                    args.error.set_unexpected_token(token);
                     args.error.set(expected(EndOfInput).into());
                 }
                 None
@@ -314,7 +314,7 @@ pub fn char<I: Input, E: ParseError<I>, C, S: Clone, Token: PartialEq<I::Token>>
 impl<I: Input, E: ParseError<I>, C, S: Clone, Token: PartialEq<I::Token> + Clone> ParserOnce<I, I::Token, E, C, S>
     for Char<Token, I, E, C, S>
 where
-    E::Message: From<Unexpected<error::Token<I::Token>>> + From<Expected<error::Token<Token>>>,
+    E::Message: From<Expected<error::Token<Token>>>,
 {
     #[inline(always)]
     fn run_once(mut self, args: Args<I, E, C, S>) -> Option<I::Token> {
@@ -324,7 +324,7 @@ where
 impl<I: Input, E: ParseError<I>, C, S: Clone, Token: PartialEq<I::Token> + Clone> Parser<I, I::Token, E, C, S>
     for Char<Token, I, E, C, S>
 where
-    E::Message: From<Unexpected<error::Token<I::Token>>> + From<Expected<error::Token<Token>>>,
+    E::Message: From<Expected<error::Token<Token>>>,
 {
     #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<I::Token> {
@@ -334,7 +334,7 @@ where
             Some(c)
         } else {
             if args.error.add(None, pos) {
-                args.error.set(unexpected(error::token(c)).into());
+                args.error.set_unexpected_token(c);
                 args.error.set(expected(error::token(self.0.clone())).into())
             }
             None
@@ -434,7 +434,6 @@ pub fn none_of<Iter: CharsOrRange<Item>, Item, I, E, C, S>(chars: Iter) -> NoneO
 impl<I: Input, E: ParseError<I>, C, S: Clone, Item: PartialEq<I::Token>, Iter: IntoChars<Item = Item>>
     Parser<I, I::Token, E, C, S> for NoneOf<Iter, Item, I, E, C, S>
 where
-    E::Message: From<Unexpected<error::Token<I::Token>>>,
     Self: Clone,
 {
     #[inline(always)]
@@ -444,8 +443,6 @@ where
 }
 impl<I: Input, E: ParseError<I>, C, S: Clone, Item: PartialEq<I::Token>, Iter: IntoChars<Item = Item>>
     ParserOnce<I, I::Token, E, C, S> for NoneOf<Iter, Item, I, E, C, S>
-where
-    E::Message: From<Unexpected<error::Token<I::Token>>>,
 {
     #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<I::Token> {
@@ -453,7 +450,7 @@ where
         for item in self.0.into_chars() {
             if item == c {
                 if args.error.add(None, pos) {
-                    args.error.set(error::unexpected(error::token(c)).into())
+                    args.error.set_unexpected_token(c)
                 }
                 return None;
             }
@@ -466,7 +463,6 @@ impl<I: Input, E: ParseError<I>, C, S: Clone, Item: PartialOrd<I::Token>> Parser
     for NoneOf<(Bound<Item>, Bound<Item>), Item, I, E, C, S>
 where
     I::Token: PartialOrd<Item>,
-    E::Message: From<Unexpected<error::Token<I::Token>>>,
 {
     #[inline(always)]
     fn run_once(mut self, args: Args<I, E, C, S>) -> Option<I::Token> {
@@ -477,7 +473,6 @@ impl<I: Input, E: ParseError<I>, C, S: Clone, Item: PartialOrd<I::Token>> Parser
     for NoneOf<(Bound<Item>, Bound<Item>), Item, I, E, C, S>
 where
     I::Token: PartialOrd<Item>,
-    E::Message: From<Unexpected<error::Token<I::Token>>>,
 {
     #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<I::Token> {
@@ -487,7 +482,7 @@ where
             Some(c)
         } else {
             if args.error.add(None, pos) {
-                args.error.set(error::unexpected(error::token(c)).into())
+                args.error.set_unexpected_token(c)
             }
             None
         }
@@ -530,8 +525,6 @@ impl<
         S: Clone,
         Iter: IntoChars<Item = impl PartialEq<I::Token> + Display + 'static> + Clone,
     > Parser<I, (), E, C, S> for String<Iter, I, E, C, S>
-where
-    E::Message: From<Unexpected<error::Token<I::Token>>>,
 {
     #[inline(always)]
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<()> {
@@ -540,8 +533,6 @@ where
 }
 impl<I: Input, E: ParseError<I>, C, S: Clone, Iter: IntoChars<Item = impl PartialEq<I::Token> + Display + 'static>>
     ParserOnce<I, (), E, C, S> for String<Iter, I, E, C, S>
-where
-    E::Message: From<Unexpected<error::Token<I::Token>>>,
 {
     #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<()> {
@@ -549,7 +540,7 @@ where
             let (c, pos) = args.uncons()?;
             if item != c {
                 if args.error.add(None, pos) {
-                    args.error.set(error::unexpected(error::token(c)).into())
+                    args.error.set_unexpected_token(c)
                 }
                 return None;
             }
@@ -583,11 +574,15 @@ impl<I: Input, E: ParseError<I>, C, S: Clone, F: FnOnce(&I::Token) -> bool> Pars
 {
     #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<I::Token> {
-        let c = args.uncons()?.0;
+        let (c, start) = args.uncons()?;
         if self.0(&c) {
             args.consume.drop();
             Some(c)
         } else {
+            let end = args.input.position();
+            if args.error.add(Some(start), end) {
+                args.error.set_unexpected_token(c);
+            }
             None
         }
     }
@@ -597,11 +592,15 @@ impl<I: Input, E: ParseError<I>, C, S: Clone, F: FnMut(&I::Token) -> bool> Parse
 {
     #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<I::Token> {
-        let c = args.uncons()?.0;
+        let (c, start) = args.uncons()?;
         if self.0(&c) {
             args.consume.drop();
             Some(c)
         } else {
+            let end = args.input.position();
+            if args.error.add(Some(start), end) {
+                args.error.set_unexpected_token(c);
+            }
             None
         }
     }
@@ -633,9 +632,20 @@ impl<I: Input, O, E: ParseError<I>, C, S: Clone, F: FnOnce(&I::Token) -> Option<
 {
     #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O> {
-        let o = self.0(&(args.uncons()?.0))?;
-        args.consume.drop();
-        Some(o)
+        let (c, start) = args.uncons()?;
+        match self.0(&c) {
+            Some(o) => {
+                args.consume.drop();
+                Some(o)
+            },
+            None => {
+                let end = args.input.position();
+                if args.error.add(Some(start), end) {
+                    args.error.set_unexpected_token(c);
+                }
+                None
+            },
+        }
     }
 }
 impl<I: Input, O, E: ParseError<I>, C, S: Clone, F: FnMut(&I::Token) -> Option<O>> Parser<I, O, E, C, S>
@@ -643,9 +653,75 @@ impl<I: Input, O, E: ParseError<I>, C, S: Clone, F: FnMut(&I::Token) -> Option<O
 {
     #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O> {
-        let o = self.0(&(args.uncons()?.0))?;
-        args.consume.drop();
-        Some(o)
+        let (c, start) = args.uncons()?;
+        match self.0(&c) {
+            Some(o) => {
+                args.consume.drop();
+                Some(o)
+            },
+            None => {
+                let end = args.input.position();
+                if args.error.add(Some(start), end) {
+                    args.error.set_unexpected_token(c);
+                }
+                None
+            },
+        }
+    }
+}
+
+pub struct SatisfyBind<F, I, E, C, S>(F, PhantomData<fn() -> (I, E, C, S)>);
+impl<F: Clone, I, E, C, S> Clone for SatisfyBind<F, I, E, C, S> {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), PhantomData)
+    }
+}
+impl<F: Copy, I, E, C, S> Copy for SatisfyBind<F, I, E, C, S> {}
+#[inline(always)]
+pub fn satisfy_bind<F, I, E, C, S>(f: F) -> SatisfyBind<F, I, E, C, S> {
+    SatisfyBind(f, PhantomData)
+}
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, F: FnOnce(&I::Token) -> Option<Q>, Q: ParserOnce<I, O, E, C, S>>
+    ParserOnce<I, O, E, C, S> for SatisfyBind<F, I, E, C, S>
+{
+    #[inline(always)]
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O> {
+        let (c, start) = args.uncons()?;
+        match self.0(&c) {
+            Some(parser) => {
+                args.consume.drop();
+                parser.run_once(args)
+            },
+            None => {
+                let end = args.input.position();
+                if args.error.add(Some(start), end) {
+                    args.error.set_unexpected_token(c);
+                }
+                None
+            },
+        }
+    }
+}
+impl<I: Input, O, E: ParseError<I>, C, S: Clone, F: FnMut(&I::Token) -> Option<Q>, Q: ParserOnce<I, O, E, C, S>>
+    Parser<I, O, E, C, S> for SatisfyBind<F, I, E, C, S>
+{
+    #[inline(always)]
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O> {
+        let (c, start) = args.uncons()?;
+        match self.0(&c) {
+            Some(parser) => {
+                args.consume.drop();
+                parser.run_once(args)
+            },
+            None => {
+                let end = args.input.position();
+                if args.error.add(Some(start), end) {
+                    args.error.set_unexpected_token(c);
+                }
+                None
+            },
+        }
     }
 }
 

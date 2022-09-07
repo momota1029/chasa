@@ -1,3 +1,5 @@
+use crate::error;
+
 use super::{
     error::ParseError,
     input::Input,
@@ -27,9 +29,37 @@ impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
     }
 
     #[inline(always)]
+    pub fn satisfy_cont<O>(
+        mut self, f: impl FnOnce(&I::Token, Args<'a, 'b, I, E, C, S>) -> Option<Cont<'a, 'b, I, O, E, C, S>>,
+    ) -> Cont<'a, 'b, I, O, E, C, S>
+    where
+        E::Message: From<error::Unexpected<error::Token<I::Token>>>,
+    {
+        match self.uncons() {
+            None => Cont(None),
+            Some((c, start)) => {
+                let Args { input, config, state, consume, error } = self;
+                // When `f` returns `None`, the reference to the `args` no longer exists, but the compiler takes the lifetime into account. To deal with this, unsafe is used. A better solution is sought.
+                let (input2, error2) = unsafe { (&mut *(input as *mut I), &mut *(error as *mut E)) };
+                match f(&c, Args { input, config, state, consume, error }) {
+                    Some(k) => k,
+                    None => {
+                        let end = input2.position();
+                        if error2.add(Some(start), end) {
+                            error2.set(error::unexpected(error::token(c)).into());
+                        }
+                        Cont(None)
+                    },
+                }
+            },
+        }
+    }
+
+    #[inline(always)]
     pub fn then<P: ParserOnce<I, O, E, C, S>, O>(mut self, p: P) -> Cont<'a, 'b, I, O, E, C, S> {
         Cont(p.run_once(self.by_ref()).map(move |o| (o, self)))
     }
+
     #[inline(always)]
     pub fn config<O>(self, f: impl FnOnce(&'a C, Self) -> Cont<'a, 'b, I, O, E, C, S>) -> Cont<'a, 'b, I, O, E, C, S> {
         f(self.config, self)

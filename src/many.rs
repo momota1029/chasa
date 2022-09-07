@@ -347,7 +347,7 @@ impl<'a, 'b, P: Parser<I, O, E, C, S>, Q: Parser<I, T, E, C, S>, I: Input, O, T,
 /// # Example
 /// ```
 /// use chasa::prelude::*;
-/// let d = one_of('0'..='9').and_then(|c: char| c.to_string().parse::<isize>().map_err(error).map_err(message));
+/// let d = one_of('0'..='9').and_then(|c: char| c.to_string().parse::<isize>().map_err(from_error));
 /// let p = d.sep(char(','));
 /// assert_eq!(p.parse_ok("1,2,3,4,5"), Some(vec![1,2,3,4,5]));
 /// assert_eq!(p.parse_ok(""), Some(vec![]));
@@ -420,7 +420,7 @@ impl<
 /// # Example
 /// ```
 /// use chasa::prelude::*;
-/// let d = one_of('0'..='9').and_then(|c: char| c.to_string().parse::<isize>().map_err(error).map_err(message));
+/// let d = one_of('0'..='9').and_then(|c: char| c.to_string().parse::<isize>().map_err(from_error));
 /// let p = d.sep1(char(','));
 /// assert_eq!(p.parse_ok("1,2,3,4,5"), Some(vec![1,2,3,4,5]));
 /// assert_eq!(p.parse_ok(""), None);
@@ -501,7 +501,7 @@ impl<
 /// # Example
 /// ```
 /// use chasa::prelude::*;
-/// let d = one_of('0'..='9').and_then(|c: char| c.to_string().parse::<isize>().map_err(error).map_err(message));
+/// let d = one_of('0'..='9').and_then(|c: char| c.to_string().parse::<isize>().map_err(from_error));
 /// assert_eq!(
 ///     d.sep_map(char(','), |iter| iter.take(2).collect())
 ///         .and(str(",3,4,5").to(true))

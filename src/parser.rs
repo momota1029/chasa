@@ -1,6 +1,9 @@
 use std::{fmt::Display, fmt::Write, hash::Hash, marker::PhantomData};
 
-use crate::many::{ManyBind, SepBind};
+use crate::{
+    combi::OrWith,
+    many::{ManyBind, SepBind},
+};
 
 use super::{
     combi::{
@@ -102,7 +105,7 @@ pub trait ParserOnce<
         Label(self, label)
     }
     #[inline(always)]
-    fn label_with<F: Fn() -> L, L>(self, label: F) -> LabelWith<Self, F>
+    fn label_with<F: FnMut() -> L, L>(self, label: F) -> LabelWith<Self, F>
     where
         Self: Sized,
         E::Message: From<error::Expected<error::Format<L>>>,
@@ -129,6 +132,13 @@ pub trait ParserOnce<
         Self: Sized,
     {
         OrNot(self)
+    }
+    #[inline(always)]
+    fn or_with_once<R, F: FnOnce(R) -> Q, Q: ParserOnce<I, O, E, C, S>>(self, resource: R, f: F) -> OrWith<Self, R, F>
+    where
+        Self: Sized,
+    {
+        OrWith(self, resource, f)
     }
     #[inline(always)]
     fn between<P1: ParserOnce<I, Output1, E, C, S>, P2: ParserOnce<I, Output2, E, C, S>, Output1, Output2>(
@@ -208,6 +218,13 @@ pub trait Parser<
         MutParser(self)
     }
     #[inline(always)]
+    fn or_with<R, F: FnMut(R) -> Q, Q: ParserOnce<I, O, E, C, S>>(self, resource: R, f: F) -> OrWith<Self, R, F>
+    where
+        Self: Sized,
+    {
+        OrWith(self, resource, f)
+    }
+    #[inline(always)]
     fn case<F: for<'a, 'b> FnMut(O, Args<'a, 'b, I, E, C, S>) -> Cont<'a, 'b, I, O2, E, C, S>, O2>(
         self, f: F,
     ) -> Case<Self, F, O, E>
@@ -238,21 +255,21 @@ pub trait Parser<
         Bind(self, f, PhantomData)
     }
     #[inline(always)]
-    fn fold<T, F: Fn(T, O) -> T>(self, init: T, f: F) -> Fold<T, Self, F, O>
+    fn fold<T, F: FnMut(T, O) -> T>(self, init: T, f: F) -> Fold<T, Self, F, O>
     where
         Self: Sized,
     {
         fold(init, self, f)
     }
     #[inline(always)]
-    fn fold1<T, F: Fn(T, O) -> T>(self, init: T, f: F) -> Fold1<T, Self, F, O>
+    fn fold1<T, F: FnMut(T, O) -> T>(self, init: T, f: F) -> Fold1<T, Self, F, O>
     where
         Self: Sized,
     {
         fold1(init, self, f)
     }
     #[inline(always)]
-    fn sep_fold<T, F: Fn(T, O) -> T, P: Parser<I, U, E, C, S>, U>(
+    fn sep_fold<T, F: FnMut(T, O) -> T, P: Parser<I, U, E, C, S>, U>(
         self, init: T, sep: P, f: F,
     ) -> SepFold<T, Self, P, F, O, U>
     where
@@ -261,14 +278,16 @@ pub trait Parser<
         SepFold { init, p: self, sep, succ: f, _marker: PhantomData }
     }
     #[inline(always)]
-    fn sep_reduce<T, F: Fn(O, T, O) -> O, P: Parser<I, T, E, C, S>, U>(self, sep: P, f: F) -> SepReduce<Self, P, F, U>
+    fn sep_reduce<T, F: FnMut(O, T, O) -> O, P: Parser<I, T, E, C, S>, U>(
+        self, sep: P, f: F,
+    ) -> SepReduce<Self, P, F, U>
     where
         Self: Sized,
     {
         SepReduce { item: self, sep, accum: f, _marker: PhantomData }
     }
     #[inline(always)]
-    fn sep_fold1<T, F: Fn(T, O) -> T, P: Parser<I, U, E, C, S>, U>(
+    fn sep_fold1<T, F: FnMut(T, O) -> T, P: Parser<I, U, E, C, S>, U>(
         self, init: T, sep: P, f: F,
     ) -> SepFold1<T, Self, P, F, O, U>
     where

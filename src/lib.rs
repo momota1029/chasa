@@ -8,7 +8,7 @@ use chasa::char::prelude::*;
 // It reads a number of letters (numbers) from 0 to 9,
 let num = one_of('0'..='9').many1::<String>()
 // Interpreted as a number, errors are reported as a message.
-    .and_then(|str| str.parse::<u32>().map_err(error).map_err(message));
+    .and_then(|str| str.parse::<u32>().map_err(from_error));
 
 // Multiply by something separated by '*' and
 let prod = num.sep_reduce(char('*'), |a,_,b| a * b);
@@ -30,7 +30,7 @@ enum SExp {
     Term(String),
     List(Vec<SExp>),
 }
-fn sexp_like<'a>() -> impl Pat<&'a str, SExp> {
+fn sexp_like<I: Seq>() -> impl Pat<I, SExp> {
     // `run` prevents type recursion, but does not Box
     let term = satisfy(|c| !char::is_space(c) && c != &'(' && c != &')').many1();
     term.map(SExp::Term).or(run(sexp_like).sep(ws1).between(char('('), char(')')).map(SExp::List))
@@ -75,7 +75,7 @@ enum JSON {
     Null,
 }
 
-fn json_parser<'a>() -> impl Pat<&'a str, JSON> {
+fn json_parser<I: Seq>() -> impl Pat<I, JSON> {
     any.case(|c, k| match c {
         '{' => k
             .then(
@@ -99,11 +99,11 @@ fn json_parser<'a>() -> impl Pat<&'a str, JSON> {
     .between(whitespace, whitespace)
 }
 
-fn whitespace<'a>() -> impl Pat<&'a str, ()> {
+fn whitespace<I: Seq>() -> impl Pat<I, ()> {
     one_of("\t\r\n ").skip_many()
 }
 
-fn string_char<'a>() -> impl Pat<&'a str, Option<char>> {
+fn string_char<I: Seq>() -> impl Pat<I, Option<char>> {
     any.case(|c, k| match c {
         '\\' => k.then(any.case(|c, k| {
             match c {
@@ -119,7 +119,7 @@ fn string_char<'a>() -> impl Pat<&'a str, Option<char>> {
                     .then(
                         satisfy(|c| matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F'))
                             .repeat::<String, _>(4)
-                            .and_then(|str| u32::from_str_radix(&str, 16).map_err(|e| message(error(e))))
+                            .and_then(|str| u32::from_str_radix(&str, 16).map_err(from_error))
                             .and_then(|int| char::from_u32(int).ok_or(unexpected(format("invalid unicode char")))),
                     )
                     .map(Some),
@@ -131,7 +131,7 @@ fn string_char<'a>() -> impl Pat<&'a str, Option<char>> {
     })
 }
 
-fn num_parser<'a>(c: char) -> impl ParserOnce<&'a str, f64> {
+fn num_parser<I: Seq>(c: char) -> impl Pat<I, f64> {
     let digit = one_of('0'..='9');
     extend_with_str(c.to_string(), {
         skip_chain((
@@ -144,7 +144,7 @@ fn num_parser<'a>(c: char) -> impl ParserOnce<&'a str, f64> {
             one_of("eE").right(one_of("+-").or_not()).right(digit.skip_many1()).or_not(),
         ))
     })
-    .and_then_once(|(_, str)| str.parse::<f64>().map_err(|e| message(error(e))))
+    .and_then_once(|(_, str)| str.parse::<f64>().map_err(from_error))
 }
 
 assert_eq!(
@@ -174,11 +174,11 @@ pub mod prelude {
     #[doc(inline)]
     pub use super::combi::{before, chain, choice, extend_with_str, not_followed_by, pure_or, skip_chain, tuple};
     #[doc(inline)]
-    pub use super::error::{error, expected, format, message, token, unexpected, ParseError};
+    pub use super::error::{expected, format, from_error, message, token, unexpected, ParseError};
     #[doc(inline)]
     pub use super::fold::{fold, fold1, sep_extend, sep_extend1, sep_fold, sep_fold1, sep_reduce, tail_rec};
     #[doc(inline)]
-    pub use super::input::{pos_str, Input};
+    pub use super::input::{pos_str, Input, Seq};
     #[doc(inline)]
     pub use super::many::{many, many1, take};
     #[doc(inline)]

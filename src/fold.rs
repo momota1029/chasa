@@ -4,7 +4,7 @@ use super::{
     cont::Cont,
     error::ParseError,
     input::Input,
-    parser::{Args, Parser,ParserOnce},
+    parser::{Args, Parser, ParserOnce},
     util::Consume,
 };
 
@@ -48,7 +48,7 @@ impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
 /// # Example
 /// ```
 /// use chasa::prelude::*;
-/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(|e| message(error(e))));
+/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(from_error));
 /// assert_eq!(d.fold(0,|a,b| a+b).parse_ok("12345"), Some(15));
 /// assert_eq!(d.fold(0,|a,b| a+b).parse_ok(""), Some(0));
 /// assert_eq!(d.fold(0,|a,b| a+b).and(d).parse_ok("12345"), None);
@@ -65,7 +65,7 @@ impl<T: Copy, P: Copy, F: Copy, O> Copy for Fold<T, P, F, O> {}
 pub fn fold<T, P, F, O>(init: T, parser: P, succ: F) -> Fold<T, P, F, O> {
     Fold(init, parser, succ, PhantomData)
 }
-impl<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F: Fn(O, T) -> O>
+impl<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F: FnMut(O, T) -> O>
     ParserOnce<I, O, E, C, S> for Fold<O, P, F, T>
 {
     #[inline(always)]
@@ -74,7 +74,7 @@ impl<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F:
         run_fold(self.0, self.1, self.2, input, config, state, consume, error)
     }
 }
-impl<I: Input, O: Clone, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F: Fn(O, T) -> O>
+impl<I: Input, O: Clone, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F: FnMut(O, T) -> O>
     Parser<I, O, E, C, S> for Fold<O, P, F, T>
 {
     #[inline(always)]
@@ -88,7 +88,7 @@ impl<I: Input, O: Clone, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C,
 /// # Example
 /// ```
 /// use chasa::prelude::*;
-/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(|e| message(error(e))));
+/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(from_error));
 /// assert_eq!(d.fold1(0,|a,b| a+b).parse_ok("12345"), Some(15));
 /// assert_eq!(d.fold1(0,|a,b| a+b).parse_ok(""), None);
 /// assert_eq!(d.fold1(0,|a,b| a+b).and(d).parse_ok("12345"), None);
@@ -105,7 +105,7 @@ impl<T: Copy, P: Copy, F: Copy, O> Copy for Fold1<T, P, F, O> {}
 pub fn fold1<T, P, F, O>(init: T, parser: P, succ: F) -> Fold1<T, P, F, O> {
     Fold1(init, parser, succ, PhantomData)
 }
-impl<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F: Fn(O, T) -> O>
+impl<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F: FnMut(O, T) -> O>
     ParserOnce<I, O, E, C, S> for Fold1<O, P, F, T>
 {
     #[inline(always)]
@@ -115,7 +115,7 @@ impl<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F:
         run_fold(init, self.1, self.2, input, config, state, consume, error)
     }
 }
-impl<I: Input, O: Clone, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F: Fn(O, T) -> O>
+impl<I: Input, O: Clone, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F: FnMut(O, T) -> O>
     Parser<I, O, E, C, S> for Fold1<O, P, F, T>
 {
     #[inline(always)]
@@ -273,7 +273,7 @@ impl<'a, 'b, I: Input, O, E: ParseError<I>, C, S: Clone> Cont<'a, 'b, I, O, E, C
 /// # Example
 /// ```
 /// use chasa::prelude::*;
-/// let d = one_of("0123456789").and_then(|c:char| c.to_string().parse::<usize>().map_err(error).map_err(message));
+/// let d = one_of("0123456789").and_then(|c:char| c.to_string().parse::<usize>().map_err(from_error));
 /// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).parse_ok("1,2,3,4,5"), Some(15));
 /// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).parse_ok(""), Some(0));
 /// assert_eq!(d.sep_fold(0, char(','),|a,b| a+b).and(char(',').right(d)).parse_ok("1,2,3,4,5,6"), None);
@@ -355,7 +355,7 @@ impl<
 /// # Example
 /// ```
 /// use chasa::prelude::*;
-/// let d = one_of("0123456789").and_then(|c:char| c.to_string().parse::<usize>().map_err(error).map_err(message));
+/// let d = one_of("0123456789").and_then(|c:char| c.to_string().parse::<usize>().map_err(from_error));
 /// assert_eq!(d.sep_fold1(0, char(','),|a,b| a+b).parse_ok("1,2,3,4,5"), Some(15));
 /// assert_eq!(d.sep_fold1(0, char(','),|a,b| a+b).parse_ok(""), None);
 /// assert_eq!(d.sep_fold1(0, char(','),|a,b| a+b).and(char(',').right(d)).parse_ok("1,2,3,4,5,6"), None);
@@ -953,7 +953,7 @@ impl<'a, 'b, I: Input, O, E: ParseError<I>, C, S: Clone> Cont<'a, 'b, I, O, E, C
 /// # Example
 /// ```
 /// use {chasa::prelude::*, std::ops::ControlFlow::*};
-/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(error).map_err(message));
+/// let d = one_of("0123456789").and_then(|c: char| c.to_string().parse::<usize>().map_err(from_error));
 /// let mut p = char('(').right(tail_rec(0, move |n| d.map(move |m| Continue(m+n)).or(char(')').to(Break(n)))));
 /// assert_eq!(p.by_ref().parse_ok("(12345)"), Some(15));
 /// assert_eq!(p.by_ref().parse_ok("(12)345)"), Some(3));

@@ -1,4 +1,7 @@
-use std::fmt::{self, Display};
+use std::{
+    fmt::{self, Display},
+    hash::Hash,
+};
 
 use super::error::{unexpected, EndOfInput, Unexpected};
 
@@ -10,6 +13,13 @@ pub trait Input: Clone {
     fn uncons(&mut self) -> Result<Self::Token, Self::Message>;
     fn position(&self) -> Self::Position;
 }
+
+pub trait Seq: Input<Message = Unexpected<EndOfInput>>
+where
+    Self::Token: Hash + Eq,
+{
+}
+impl<I: Input<Message = Unexpected<EndOfInput>>> Seq for I where I::Token: Hash + Eq {}
 
 pub trait Save {
     type Savepoint;

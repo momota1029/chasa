@@ -227,8 +227,7 @@ macro_rules! choice_derive {
             #[inline(always)]
             fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {
                 let ($($p,)+) = self.0;
-                #[allow(unused_mut)]
-                let Args { input, config, state, consume, mut error } = args;
+                let Args { input, config, state, consume, error } = args;
                 choice_run!(run_once, input, config, state, consume, error, $($p),+)
             }
         }
@@ -236,8 +235,7 @@ macro_rules! choice_derive {
             #[inline(always)]
             fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
                 let ($($p,)+) = &mut self.0;
-                #[allow(unused_mut)]
-                let Args { input, config, state, consume, mut error } = args;
+                let Args { input, config, state, consume, error } = args;
                 choice_run!(run, input, config, state, consume, error, $($p),+)
             }
         }

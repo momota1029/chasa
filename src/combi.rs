@@ -83,8 +83,8 @@ impl<I: Input, Old, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, Old, E, C, S
         self.0.run_once(args).map(self.1)
     }
 }
-impl<I: Input, Old, E: ParseError<I>, C, S: Clone, P: Parser<I, Old, E, C, S>, F: Fn(Old) -> O, O> Parser<I, O, E, C, S>
-    for Map<P, F, Old>
+impl<I: Input, Old, E: ParseError<I>, C, S: Clone, P: Parser<I, Old, E, C, S>, F: FnMut(Old) -> O, O>
+    Parser<I, O, E, C, S> for Map<P, F, Old>
 {
     #[inline(always)]
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
@@ -679,6 +679,71 @@ impl<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>> Parse
                 *state = state_bak;
                 Some(None)
             },
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct OrWith<P, R, F>(pub(crate) P, pub(crate) R, pub(crate) F);
+impl<
+        I: Input,
+        O,
+        E: ParseError<I>,
+        C,
+        S: Clone,
+        P: ParserOnce<I, O, E, C, S>,
+        R,
+        F: FnOnce(R) -> Q,
+        Q: ParserOnce<I, O, E, C, S>,
+    > ParserOnce<I, O, E, C, S> for OrWith<P, R, F>
+{
+    #[inline(always)]
+    fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {
+        let Args { input, config, state, consume, error } = args;
+        let (input_bak, state_bak) = (input.clone(), state.clone());
+        match consume.wrap(|consume| {
+            consume.cons((input_bak, state_bak, self.1), |consume| {
+                consume.wrap(|consume| self.0.run_once(Args { input, config, state, consume, error }))
+            })
+        }) {
+            (Some(o), _) => Some(o),
+            (None, Some((input_bak, state_bak, r))) => {
+                *input = input_bak;
+                *state = state_bak;
+                self.2(r).run_once(Args { input, config, state, consume, error })
+            },
+            (None, None) => None,
+        }
+    }
+}
+impl<
+        I: Input,
+        O,
+        E: ParseError<I>,
+        C,
+        S: Clone,
+        P: Parser<I, O, E, C, S>,
+        R: Clone,
+        F: FnMut(R) -> Q,
+        Q: ParserOnce<I, O, E, C, S>,
+    > Parser<I, O, E, C, S> for OrWith<P, R, F>
+{
+    #[inline(always)]
+    fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
+        let Args { input, config, state, consume, error } = args;
+        let (input_bak, state_bak) = (input.clone(), state.clone());
+        match consume.wrap(|consume| {
+            consume.cons((input_bak, state_bak, self.1.clone()), |consume| {
+                consume.wrap(|consume| self.0.run(Args { input, config, state, consume, error }))
+            })
+        }) {
+            (Some(o), _) => Some(o),
+            (None, Some((input_bak, state_bak, r))) => {
+                *input = input_bak;
+                *state = state_bak;
+                self.2(r).run_once(Args { input, config, state, consume, error })
+            },
+            (None, None) => None,
         }
     }
 }

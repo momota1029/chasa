@@ -107,6 +107,10 @@ pub enum StdMessage<M, E> {
     Format(M),
     Error(E),
 }
+pub fn from_error<E>(error: E) -> Message<Error<E>> {
+    message(self::error(error))
+}
+
 impl<T, M: From<T>, E> From<Format<T>> for StdMessage<M, E> {
     fn from(from: Format<T>) -> Self {
         StdMessage::Format(from.0.into())
@@ -128,7 +132,7 @@ impl<M: Display, E: Display> Display for StdMessage<M, E> {
 }
 
 pub trait ParseError<I: Input> {
-    type Message: From<I::Message>;
+    type Message: From<I::Message> + From<Unexpected<Token<I::Token>>>;
     type Warn;
 
     fn new() -> Self;
@@ -140,6 +144,11 @@ pub trait ParseError<I: Input> {
     fn warn(&mut self, start: Option<I::Position>, end: I::Position, warn: Self::Warn);
 
     fn save(&mut self);
+
+    #[inline(always)]
+    fn set_unexpected_token(&mut self, token: I::Token) {
+        self.set(Unexpected(Token(token)).into())
+    }
 }
 
 pub struct StdParseError<Token, Position> {
