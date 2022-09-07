@@ -471,32 +471,6 @@ impl<
         })
     }
 }
-// impl<I: InputOnce, Output, C, S, M: Cb, P: ParserOnce<I, Output, C, S, M>, O, F: FnOnce(Output) -> Result<O, Eb<M>>>
-//     ParserOnce<I, O, C, S, M> for AndThen<P, F, Output>
-// {
-//     #[inline(always)]
-//     fn run_once(self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-//         let ICont { ok, config, drop } = cont;
-//         let pos = ok.input.pos();
-//         self.0.run_once(ICont { ok, config, drop }).and_then(|(o, ok)| match self.1(o) {
-//             Ok(o) => Ok((o, ok)),
-//             Err(err) => Err(err.at::<I>(ok.input.index(), pos, Some(ok.input.pos())).or_merge(ok.err)),
-//         })
-//     }
-// }
-// impl<I: InputOnce, Output, C, S, M: Cb, P: Parser<I, Output, C, S, M>, O, F: Fn(Output) -> Result<O, Eb<M>>>
-//     Parser<I, O, C, S, M> for AndThen<P, F, Output>
-// {
-//     #[inline(always)]
-//     fn run(&self, cont: ICont<I, C, S, M>) -> IResult<O, I, S, M> {
-//         let ICont { ok, config, drop } = cont;
-//         let pos = ok.input.pos();
-//         self.0.run(ICont { ok, config, drop }).and_then(|(o, ok)| match self.1(o) {
-//             Ok(o) => Ok((o, ok)),
-//             Err(err) => Err(err.at::<I>(ok.input.index(), pos, Some(ok.input.pos())).or_merge(ok.err)),
-//         })
-//     }
-// }
 
 /// Pass a value to chain the parser together with the parser result, and let the parser continue.
 /// Even if `bind` returns a lot of parsers of different types, `case` does not need to use `Either` artificially

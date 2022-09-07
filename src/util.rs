@@ -34,6 +34,7 @@ trait SomeDrop {
     fn some_drop(&mut self);
 }
 impl<'a, 'b, T> SomeDrop for (Option<T>, &'a mut ResourceList<'b>) {
+    #[inline(always)]
     fn some_drop(&mut self) {
         if self.0.is_some() {
             self.0 = None;
@@ -42,6 +43,7 @@ impl<'a, 'b, T> SomeDrop for (Option<T>, &'a mut ResourceList<'b>) {
     }
 }
 impl<'a, 'b> SomeDrop for (bool, &'a mut ResourceList<'b>) {
+    #[inline(always)]
     fn some_drop(&mut self) {
         if self.0 == false {
             self.0 = true;
@@ -54,6 +56,7 @@ enum ResourceList<'a> {
     Cons(&'a mut dyn SomeDrop),
 }
 impl<'a> ResourceList<'a> {
+    #[inline(always)]
     fn drop(&mut self) {
         match self {
             Self::Nil => (),
@@ -70,7 +73,7 @@ pub trait IntoChars {
 impl<'a> IntoChars for &'a String {
     type Item = char;
     type Iterator = std::str::Chars<'a>;
-    #[inline]
+    #[inline(always)]
     fn into_chars(self) -> Self::Iterator {
         self.chars()
     }
@@ -78,7 +81,7 @@ impl<'a> IntoChars for &'a String {
 impl<'a> IntoChars for &'a str {
     type Item = char;
     type Iterator = std::str::Chars<'a>;
-    #[inline]
+    #[inline(always)]
     fn into_chars(self) -> Self::Iterator {
         self.chars()
     }
@@ -86,7 +89,7 @@ impl<'a> IntoChars for &'a str {
 impl<'a, T: Clone> IntoChars for &'a [T] {
     type Item = T;
     type Iterator = std::iter::Cloned<std::slice::Iter<'a, T>>;
-    #[inline]
+    #[inline(always)]
     fn into_chars(self) -> Self::Iterator {
         self.into_iter().cloned()
     }
@@ -99,7 +102,7 @@ pub trait CharsOrRange<Item> {
 }
 impl<I: IntoChars> CharsOrRange<<I as IntoChars>::Item> for I {
     type To = I;
-    #[inline]
+    #[inline(always)]
     fn to(self) -> Self {
         self
     }
@@ -108,7 +111,7 @@ macro_rules! chars_as_range {
     ($item:ident, $t:ty) =>{
         impl<$item> CharsOrRange<$item> for $t {
             type To = (Bound<$item>, Bound<$item>);
-            #[inline]
+            #[inline(always)]
             fn to(self) -> Self::To {
                 self.to_pair()
             }
