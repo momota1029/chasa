@@ -2,7 +2,7 @@ use super::error::ParseError;
 
 use {
     super::{
-        input::Input,
+        input::InputOnce,
         parser::{Args, Parser, ParserOnce},
     },
     std::ops::Bound,
@@ -170,7 +170,7 @@ impl<T> RangeWithOrd<T> for std::ops::RangeFull {
 }
 
 struct FromFunc<F>(F);
-impl<I: Input, O, E: ParseError<I>, C, S: Clone, F: FnOnce(Args<I, E, C, S>) -> Option<O>> ParserOnce<I, O, E, C, S>
+impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnOnce(Args<I, E, C, S>) -> Option<O>> ParserOnce<I, O, E, C, S>
     for FromFunc<F>
 {
     #[inline(always)]
@@ -178,7 +178,7 @@ impl<I: Input, O, E: ParseError<I>, C, S: Clone, F: FnOnce(Args<I, E, C, S>) -> 
         self.0(args)
     }
 }
-impl<I: Input, O, E: ParseError<I>, C, S: Clone, F: FnMut(Args<I, E, C, S>) -> Option<O>> Parser<I, O, E, C, S>
+impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnMut(Args<I, E, C, S>) -> Option<O>> Parser<I, O, E, C, S>
     for FromFunc<F>
 {
     #[inline(always)]
@@ -189,7 +189,7 @@ impl<I: Input, O, E: ParseError<I>, C, S: Clone, F: FnMut(Args<I, E, C, S>) -> O
 
 /// Hides recursive parser types and size ambiguity.
 #[inline(always)]
-pub fn run<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>>(
+pub fn run<I: InputOnce, O, E: ParseError<I>, C, S, P: Parser<I, O, E, C, S>>(
     mut parser: P,
 ) -> impl Parser<I, O, E, C, S> {
     FromFunc(move |k: Args<I, E, C, S>| parser.run(k))
@@ -197,7 +197,7 @@ pub fn run<I: Input, O, E: ParseError<I>, C, S: Clone, P: Parser<I, O, E, C, S>>
 
 /// Hides recursive parser types and size ambiguity. It does not matter if this parser has ownership.
 #[inline(always)]
-pub fn run_once<I: Input, O, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, O, E, C, S>>(
+pub fn run_once<I: InputOnce, O, E: ParseError<I>, C, S, P: ParserOnce<I, O, E, C, S>>(
     parser: P,
 ) -> impl ParserOnce<I, O, E, C, S> {
     FromFunc(move |k: Args<I, E, C, S>| parser.run_once(k))

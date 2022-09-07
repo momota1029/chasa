@@ -4,7 +4,7 @@ use super::{
     combi::Value,
     error::ParseError,
     parser::{Parser, ParserOnce,Args},
-    input::{Input,Save},
+    input::{Input,InputOnce,Save},
 };
 
 /**
@@ -35,14 +35,14 @@ macro_rules! chain_derive_fold {
 }
 macro_rules! chain_derive {
     ($($ps:ident $pst:ident $ost:ident),+) => {
-        impl<I: Input, $($ost),+, E: ParseError<I>, C, S: Clone, $($pst: ParserOnce<I,$ost,E,C,S>),+> ParserOnce<I,($($ost,)+),E,C,S> for Chain<($($pst,)+)> {
+        impl<I: InputOnce, $($ost),+, E: ParseError<I>, C, S, $($pst: ParserOnce<I,$ost,E,C,S>),+> ParserOnce<I,($($ost,)+),E,C,S> for Chain<($($pst,)+)> {
             #[inline(always)]
             fn run_once(self, mut args: Args<I, E, C, S>) -> Option<($($ost,)+)> {
                 let ($($ps,)+) = self.0;
                 Some(($($ps.run_once(args.by_ref())?,)+))
             }
         }
-        impl<I: Input, $($ost),+, E: ParseError<I>, C, S: Clone, $($pst: Parser<I,$ost,E,C,S>),+> Parser<I,($($ost,)+),E,C,S> for Chain<($($pst,)+)> {
+        impl<I: InputOnce, $($ost),+, E: ParseError<I>, C, S, $($pst: Parser<I,$ost,E,C,S>),+> Parser<I,($($ost,)+),E,C,S> for Chain<($($pst,)+)> {
             #[inline(always)]
             fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<($($ost,)+)> {
                 let ($($ps,)+) = &mut self.0;
@@ -123,14 +123,14 @@ macro_rules! chain_right_derive_fold {
 }
 macro_rules! chain_right_derive {
     ($olt:ident; $($ps:ident $pst:ident $ost:ident),+; $($oet:ident),*) => {
-        impl<I: Input, $($ost),+, E: ParseError<I>, C, S: Clone, $($pst: ParserOnce<I,$ost,E,C,S>),+> ParserOnce<I,$olt,E,C,S> for ChainRight<($($pst,)+),($($oet,)*)> {
+        impl<I: InputOnce, $($ost),+, E: ParseError<I>, C, S, $($pst: ParserOnce<I,$ost,E,C,S>),+> ParserOnce<I,$olt,E,C,S> for ChainRight<($($pst,)+),($($oet,)*)> {
             #[inline(always)]
             fn run_once(self, mut args: Args<I, E, C, S>) -> Option<$olt> {
                 let ($($ps,)+) = self.0;
                 Some({$($ps.run_once(args.by_ref())?);+})
             }
         }
-        impl<I: Input, $($ost),+, E: ParseError<I>, C, S: Clone, $($pst: Parser<I,$ost,E,C,S>),+> Parser<I,$olt,E,C,S> for ChainRight<($($pst,)+),($($oet,)*)> {
+        impl<I: InputOnce, $($ost),+, E: ParseError<I>, C, S, $($pst: Parser<I,$ost,E,C,S>),+> Parser<I,$olt,E,C,S> for ChainRight<($($pst,)+),($($oet,)*)> {
             #[inline(always)]
             fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<$olt> {
                 let ($($ps,)+) = &mut self.0;
@@ -223,7 +223,7 @@ macro_rules! choice_run {
 }
 macro_rules! choice_derive {
     ($($p:ident $t:ident),+) => {
-        impl<I: Input + Save, O, E: ParseError<I>, C, S: Save, $($t: ParserOnce<I, O, E, C, S>),+> ParserOnce<I, O, E, C, S> for Choice<($($t,)+)> {
+        impl<I: Input, O, E: ParseError<I>, C, S: Save, $($t: ParserOnce<I, O, E, C, S>),+> ParserOnce<I, O, E, C, S> for Choice<($($t,)+)> {
             #[inline(always)]
             fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {
                 let ($($p,)+) = self.0;
@@ -231,7 +231,7 @@ macro_rules! choice_derive {
                 choice_run!(run_once, input, config, state, consume, error, $($p),+)
             }
         }
-        impl<I: Input + Save, O, E: ParseError<I>, C, S: Save, $($t: Parser<I, O, E, C, S>),+> Parser<I, O, E, C, S> for Choice<($($t,)+)> {
+        impl<I: Input, O, E: ParseError<I>, C, S: Save, $($t: Parser<I, O, E, C, S>),+> Parser<I, O, E, C, S> for Choice<($($t,)+)> {
             #[inline(always)]
             fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
                 let ($($p,)+) = &mut self.0;
