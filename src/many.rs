@@ -7,18 +7,18 @@ use std::{
 use super::{
     error::ParseError,
     fold,
-    input::Input,
+    input::{Input, Save},
     parser::{Args, Parser, ParserOnce},
     util::{Consume, RangeWithOrd},
 };
 
-pub struct ManyIterator<'a, 'b, P: Parser<I, O, E, C, S>, I: Input, O, E: ParseError<I>, C, S: Clone> {
+pub struct ManyIterator<'a, 'b, P: Parser<I, O, E, C, S>, I: Input, O, E: ParseError<I>, C, S: Save> {
     parser: &'a mut P,
     args: Args<'a, 'b, I, E, C, S>,
     failed: &'a mut bool,
     _marker: PhantomData<fn() -> O>,
 }
-impl<'a, 'b, P: Parser<I, O, E, C, S>, I: Input, O, E: ParseError<I>, C, S: Clone> Iterator
+impl<'a, 'b, P: Parser<I, O, E, C, S>, I: Input, O, E: ParseError<I>, C, S: Save> Iterator
     for ManyIterator<'a, 'b, P, I, O, E, C, S>
 {
     type Item = O;
@@ -52,10 +52,10 @@ impl<P: Clone, O, T> Clone for Many<P, O, T> {
 }
 impl<P: Copy, O, T> Copy for Many<P, O, T> {}
 #[inline(always)]
-pub fn many<O, T, I: Input, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>>(parser: P) -> Many<P, O, T> {
+pub fn many<O, T, I: Input, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>>(parser: P) -> Many<P, O, T> {
     Many(parser, PhantomData)
 }
-impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>> ParserOnce<I, O, E, C, S>
+impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>> ParserOnce<I, O, E, C, S>
     for Many<P, O, T>
 {
     #[inline(always)]
@@ -63,7 +63,7 @@ impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I
         self.run(args)
     }
 }
-impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>> Parser<I, O, E, C, S>
+impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>> Parser<I, O, E, C, S>
     for Many<P, O, T>
 {
     #[inline(always)]
@@ -97,10 +97,10 @@ impl<P: Clone, O, T> Clone for Many1<P, O, T> {
 }
 impl<P: Copy, O, T> Copy for Many1<P, O, T> {}
 #[inline(always)]
-pub fn many1<O, T, I: Input, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>>(parser: P) -> Many1<P, O, T> {
+pub fn many1<O, T, I: Input, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>>(parser: P) -> Many1<P, O, T> {
     Many1(parser, PhantomData)
 }
-impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>> ParserOnce<I, O, E, C, S>
+impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>> ParserOnce<I, O, E, C, S>
     for Many1<P, O, T>
 {
     #[inline(always)]
@@ -108,7 +108,7 @@ impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I
         self.run(args)
     }
 }
-impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>> Parser<I, O, E, C, S>
+impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>> Parser<I, O, E, C, S>
     for Many1<P, O, T>
 {
     #[inline(always)]
@@ -164,7 +164,7 @@ impl<
         T,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         F: FnOnce(ManyIterator<P, I, T, E, C, S>) -> O,
     > ParserOnce<I, O, E, C, S> for ManyMap<P, F, T>
@@ -186,7 +186,7 @@ impl<
         T,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         F: FnMut(ManyIterator<P, I, T, E, C, S>) -> O,
     > Parser<I, O, E, C, S> for ManyMap<P, F, T>
@@ -217,7 +217,7 @@ impl<
         O2,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, O1, E, C, S>,
         Q: ParserOnce<I, O2, E, C, S>,
         F: FnOnce(ManyIterator<P, I, O1, E, C, S>) -> Q,
@@ -245,7 +245,7 @@ impl<
         O2,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, O1, E, C, S>,
         Q: ParserOnce<I, O2, E, C, S>,
         F: FnMut(ManyIterator<P, I, O1, E, C, S>) -> Q,
@@ -279,7 +279,7 @@ pub struct SepIterator<
     T,
     E: ParseError<I>,
     C,
-    S: Clone,
+    S: Save,
 > {
     item_parser: &'a mut P,
     sep_parser: &'a mut Q,
@@ -290,11 +290,11 @@ pub struct SepIterator<
     input: &'a mut I,
     config: &'a C,
     state: &'a mut S,
-    consume: &'a mut Consume<'b, (I, S)>,
+    consume: &'a mut Consume<'b>,
     error: &'a mut E,
     _marker: PhantomData<fn() -> (O, T)>,
 }
-impl<'a, 'b, P: Parser<I, O, E, C, S>, Q: Parser<I, T, E, C, S>, I: Input, O, T, E: ParseError<I>, C, S: Clone> Iterator
+impl<'a, 'b, P: Parser<I, O, E, C, S>, Q: Parser<I, T, E, C, S>, I: Input, O, T, E: ParseError<I>, C, S: Save> Iterator
     for SepIterator<'a, 'b, P, Q, I, O, T, E, C, S>
 {
     type Item = O;
@@ -316,22 +316,22 @@ impl<'a, 'b, P: Parser<I, O, E, C, S>, Q: Parser<I, T, E, C, S>, I: Input, O, T,
                 Some(o) => o,
             }
         } else {
-            let (bak_input, bak_state) = (self.input.clone(), self.state.clone());
-            match self.consume.cons((bak_input, bak_state), |consume| {
+            let (bak_input, bak_state) = (self.input.save(), self.state.save());
+            match self.consume.cons((bak_input, bak_state), |mut consume| {
                 fold::run_sep_second_part(
                     self.item_parser,
                     self.sep_parser,
                     self.input,
                     self.config,
                     self.state,
-                    consume,
+                    &mut consume,
                     self.error,
                 )
             }) {
                 (Some((_, item)), _) => Some(item),
                 (None, Some((bak_input, bak_state))) => {
-                    *self.input = bak_input;
-                    *self.state = bak_state;
+                    self.input.load(bak_input);
+                    self.state.load(bak_state);
                     None
                 },
                 (None, None) => {
@@ -369,7 +369,7 @@ impl<
         U,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
     > ParserOnce<I, O, E, C, S> for Sep<P, Q, O, T, U>
@@ -386,7 +386,7 @@ impl<
         U,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
     > Parser<I, O, E, C, S> for Sep<P, Q, O, T, U>
@@ -442,7 +442,7 @@ impl<
         U,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
     > ParserOnce<I, O, E, C, S> for Sep1<P, Q, O, T, U>
@@ -459,7 +459,7 @@ impl<
         U,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
     > Parser<I, O, E, C, S> for Sep1<P, Q, O, T, U>
@@ -530,7 +530,7 @@ impl<
         U,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
         F: FnOnce(SepIterator<P, Q, I, T, U, E, C, S>) -> O,
@@ -566,7 +566,7 @@ impl<
         U,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
         F: FnMut(SepIterator<P, Q, I, T, U, E, C, S>) -> O,
@@ -611,7 +611,7 @@ impl<
         T,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, O1, E, C, S>,
         Q: Parser<I, T, E, C, S>,
         R: ParserOnce<I, O2, E, C, S>,
@@ -648,7 +648,7 @@ impl<
         T,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, O1, E, C, S>,
         Q: Parser<I, T, E, C, S>,
         R: ParserOnce<I, O2, E, C, S>,
@@ -679,7 +679,7 @@ impl<
     }
 }
 
-pub struct RepeatIterator<'a, 'b, P: Parser<I, O, E, C, S>, I: Input, O, E: ParseError<I>, C, S: Clone> {
+pub struct RepeatIterator<'a, 'b, P: Parser<I, O, E, C, S>, I: Input, O, E: ParseError<I>, C, S: Save> {
     parser: &'a mut P,
     i: usize,
     start: usize,
@@ -688,7 +688,7 @@ pub struct RepeatIterator<'a, 'b, P: Parser<I, O, E, C, S>, I: Input, O, E: Pars
     failed: &'a mut bool,
     _marker: PhantomData<fn() -> O>,
 }
-impl<'a, 'b, P: Parser<I, O, E, C, S>, I: Input, O, E: ParseError<I>, C, S: Clone> Iterator
+impl<'a, 'b, P: Parser<I, O, E, C, S>, I: Input, O, E: ParseError<I>, C, S: Save> Iterator
     for RepeatIterator<'a, 'b, P, I, O, E, C, S>
 {
     type Item = O;
@@ -758,7 +758,7 @@ impl<P: Clone, O, T> Clone for Repeat<P, O, T> {
     }
 }
 impl<P: Copy, O, T> Copy for Repeat<P, O, T> {}
-impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>> ParserOnce<I, O, E, C, S>
+impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>> ParserOnce<I, O, E, C, S>
     for Repeat<P, O, T>
 {
     #[inline(always)]
@@ -766,7 +766,7 @@ impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I
         self.run(args)
     }
 }
-impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>> Parser<I, O, E, C, S>
+impl<I: Input, O: FromIterator<T>, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>> Parser<I, O, E, C, S>
     for Repeat<P, O, T>
 {
     #[inline(always)]

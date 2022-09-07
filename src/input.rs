@@ -5,7 +5,7 @@ use std::{
 
 use super::error::{unexpected, EndOfInput, Unexpected};
 
-pub trait Input: Clone {
+pub trait InputOnce {
     type Token: Clone;
     type Message;
     type Position: Position;
@@ -13,13 +13,15 @@ pub trait Input: Clone {
     fn uncons(&mut self) -> Result<Self::Token, Self::Message>;
     fn position(&self) -> Self::Position;
 }
+pub trait Input: InputOnce + Save {}
+impl<I: InputOnce + Save> Input for I {}
 
-pub trait Seq: Input<Message = Unexpected<EndOfInput>>
+pub trait Seq: Input<Message = Unexpected<EndOfInput>> + Save
 where
     Self::Token: Hash + Eq,
 {
 }
-impl<I: Input<Message = Unexpected<EndOfInput>>> Seq for I where I::Token: Hash + Eq {}
+impl<I: Input<Message = Unexpected<EndOfInput>> + Save> Seq for I where I::Token: Hash + Eq {}
 
 pub trait Save {
     type Savepoint;
@@ -73,7 +75,7 @@ impl<P: PositionPrinter, T: Display> Display for Ranged<P, T> {
     }
 }
 
-impl Input for &str {
+impl InputOnce for &str {
     type Token = char;
     type Message = Unexpected<EndOfInput>;
     type Position = Self;
@@ -123,7 +125,7 @@ pub fn pos_str<'a>(str: &'a str) -> PositionString<'a> {
     PositionString { pos: 1, str }
 }
 
-impl<'a> Input for PositionString<'a> {
+impl<'a> InputOnce for PositionString<'a> {
     type Token = char;
     type Message = Unexpected<EndOfInput>;
     type Position = usize;
@@ -181,7 +183,7 @@ impl<'a> Into<usize> for LineString<'a> {
     }
 }
 
-impl<'a> Input for LineString<'a> {
+impl<'a> InputOnce for LineString<'a> {
     type Token = char;
     type Message = Unexpected<EndOfInput>;
     type Position = Self;

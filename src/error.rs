@@ -10,7 +10,7 @@ use std::{
 
 use either::Either;
 
-use super::input::{Input, Position, Ranged};
+use super::input::{InputOnce, Position, Ranged};
 
 #[derive(Clone, Copy)]
 pub struct Unexpected<T>(T);
@@ -131,7 +131,7 @@ impl<M: Display, E: Display> Display for StdMessage<M, E> {
     }
 }
 
-pub trait ParseError<I: Input> {
+pub trait ParseError<I: InputOnce> {
     type Message: From<I::Message> + From<Unexpected<Token<I::Token>>>;
     type Warn;
 
@@ -226,7 +226,7 @@ impl<Token, Position> StdParseError<Token, Position> {
     }
 }
 
-impl<I: Input> ParseError<I> for Option<StdParseError<I::Token, I::Position>>
+impl<I: InputOnce> ParseError<I> for Option<StdParseError<I::Token, I::Position>>
 where
     I::Token: Hash + Eq,
     StdParseErrorFor<I::Token>: From<I::Message>,
@@ -240,7 +240,7 @@ where
     }
 
     #[inline(always)]
-    fn add(&mut self, start: Option<<I as Input>::Position>, end: <I as Input>::Position) -> bool {
+    fn add(&mut self, start: Option<<I as InputOnce>::Position>, end: <I as InputOnce>::Position) -> bool {
         if let Some(err) = self {
             <StdParseError<_, _> as ParseError<I>>::add(err, start, end)
         } else {
@@ -263,7 +263,7 @@ where
     }
 
     #[inline(always)]
-    fn warn(&mut self, start: Option<<I as Input>::Position>, end: <I as Input>::Position, warn: Self::Warn) {
+    fn warn(&mut self, start: Option<<I as InputOnce>::Position>, end: <I as InputOnce>::Position, warn: Self::Warn) {
         if let Some(err) = self {
             <StdParseError<_, _> as ParseError<I>>::warn(err, start, end, warn)
         }
@@ -277,7 +277,7 @@ where
     }
 }
 
-impl<I: Input> ParseError<I> for StdParseError<I::Token, I::Position>
+impl<I: InputOnce> ParseError<I> for StdParseError<I::Token, I::Position>
 where
     I::Token: Hash + Eq,
     StdParseErrorFor<I::Token>: From<I::Message>,

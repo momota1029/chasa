@@ -5,61 +5,59 @@ use {
         input::Input,
         parser::{Args, Parser, ParserOnce},
     },
-    std::{ops::Bound, ptr::NonNull},
+    std::ops::Bound,
 };
 
-pub struct Consume<'a, T>(ResourceList<'a, T>); // 実装の隠蔽
-impl<'a, T> Consume<'a, T> {
-    #[inline]
+pub struct Consume<'a>(ResourceList<'a>);
+impl<'a> Consume<'a> {
+    #[inline(always)]
     pub fn new() -> Self {
         Self(ResourceList::Nil)
     }
-    #[inline]
-    pub fn cons<O>(&mut self, item: T, f: impl FnOnce(&mut Consume<T>) -> O) -> (O, Option<T>) {
-        let hd = Some(item);
-        let res = f(&mut Consume(ResourceList::ResourceCons { hd: (&hd).into(), tl: (&self.0).into() }));
-        (res, hd)
+    #[inline(always)]
+    pub fn cons<T, O>(&mut self, item: T, f: impl FnOnce(Consume) -> O) -> (O, Option<T>) {
+        let mut some_drop = (Some(item), &mut self.0);
+        (f(Consume(ResourceList::Cons(&mut some_drop))), some_drop.0)
     }
-    #[inline]
-    pub fn drop_test<O>(&mut self, f: impl FnOnce(&mut Consume<T>) -> O) -> (O, bool) {
-        let flag = false;
-        let res = f(&mut Consume(ResourceList::DropTest { hd: (&flag).into(), tl: (&self.0).into() }));
-        (res, flag)
+    #[inline(always)]
+    pub fn is_dropped<O>(&mut self, f: impl FnOnce(Consume) -> O) -> (O, bool) {
+        let mut some_drop = (false, &mut self.0);
+        (f(Consume(ResourceList::Cons(&mut some_drop))), some_drop.0)
     }
-    #[inline]
-    pub fn wrap<S, O>(&mut self, f: impl FnOnce(&mut Consume<S>) -> O) -> O {
-        f(&mut Consume(ResourceList::DropWrap(&mut move || self.drop())))
-    }
-    #[inline]
+    #[inline(always)]
     pub fn drop(&mut self) {
         self.0.drop()
     }
 }
 
-// DropWrapの型を詳細にしたような動きしかしないので安全だが、各要素を隠蔽する必要があったのかは疑問
-enum ResourceList<'a, T> {
-    Nil,
-    DropWrap(&'a mut dyn FnMut()),
-    ResourceCons { hd: NonNull<Option<T>>, tl: NonNull<ResourceList<'a, T>> },
-    DropTest { hd: NonNull<bool>, tl: NonNull<ResourceList<'a, T>> },
+trait SomeDrop {
+    fn some_drop(&mut self);
 }
-impl<'a, T> ResourceList<'a, T> {
+impl<'a, 'b, T> SomeDrop for (Option<T>, &'a mut ResourceList<'b>) {
+    fn some_drop(&mut self) {
+        if self.0.is_some() {
+            self.0 = None;
+            self.1.drop();
+        }
+    }
+}
+impl<'a, 'b> SomeDrop for (bool, &'a mut ResourceList<'b>) {
+    fn some_drop(&mut self) {
+        if self.0 == false {
+            self.0 = true;
+            self.1.drop();
+        }
+    }
+}
+enum ResourceList<'a> {
+    Nil,
+    Cons(&'a mut dyn SomeDrop),
+}
+impl<'a> ResourceList<'a> {
     fn drop(&mut self) {
-        match std::mem::replace(self, Self::Nil) {
+        match self {
             Self::Nil => (),
-            Self::DropWrap(f) => f(),
-            Self::ResourceCons { mut hd, mut tl } => unsafe {
-                if hd.as_ref().is_some() {
-                    *hd.as_mut() = None;
-                    tl.as_mut().drop()
-                }
-            },
-            Self::DropTest { mut hd, mut tl } => unsafe {
-                if !*hd.as_ref() {
-                    *hd.as_mut() = true;
-                    tl.as_mut().drop()
-                }
-            },
+            Self::Cons(some_drop) => some_drop.some_drop(),
         }
     }
 }

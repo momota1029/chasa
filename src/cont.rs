@@ -1,14 +1,13 @@
-use crate::error;
+use crate::{error, input::InputOnce};
 
 use super::{
     error::ParseError,
-    input::Input,
     parser::{Args, ParserOnce},
 };
 
-pub struct Cont<'a, 'b, I: Input, O, E: ParseError<I>, C, S: Clone>(pub(crate) Option<(O, Args<'a, 'b, I, E, C, S>)>);
+pub struct Cont<'a, 'b, I: InputOnce, O, E: ParseError<I>, C, S>(pub(crate) Option<(O, Args<'a, 'b, I, E, C, S>)>);
 
-impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
+impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
     #[inline(always)]
     pub fn to<O>(self, value: O) -> Cont<'a, 'b, I, O, E, C, S> {
         Cont(Some((value, self)))
@@ -66,7 +65,7 @@ impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
     }
 }
 
-impl<'a, 'b, I: Input, O, E: ParseError<I>, C, S: Clone> Cont<'a, 'b, I, O, E, C, S> {
+impl<'a, 'b, I: InputOnce, O, E: ParseError<I>, C, S> Cont<'a, 'b, I, O, E, C, S> {
     #[inline(always)]
     pub fn to<O2>(self, value: O2) -> Cont<'a, 'b, I, O2, E, C, S> {
         self.case(|_, k| k.to(value))

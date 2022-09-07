@@ -1,5 +1,6 @@
 use super::{
     error::{self, ParseError},
+    input::Save,
     parser::{Parser, ParserOnce},
     prim::{char, no_state, satisfy, satisfy_map},
 };
@@ -7,7 +8,7 @@ use super::{
 pub mod prelude {
     pub use super::{
         ascii, ascii_latin, ascii_latin_num, ascii_num, newline, no_break, no_break_ws, no_break_ws1, space, ws, ws1,
-        Input, Seq,
+        Input, InputOnce, Seq,
     };
 
     #[doc(inline)]
@@ -19,7 +20,7 @@ pub mod prelude {
     #[doc(inline)]
     pub use super::super::fold::{fold, fold1, sep_extend, sep_extend1, sep_fold, sep_fold1, sep_reduce, tail_rec};
     #[doc(inline)]
-    pub use super::super::input::pos_str;
+    pub use super::super::input::{pos_str, Save};
     #[doc(inline)]
     pub use super::super::many::{many, many1, take};
     #[doc(inline)]
@@ -32,6 +33,9 @@ pub mod prelude {
     pub use super::super::util::{run, run_once};
 }
 
+pub trait InputOnce: super::input::InputOnce<Token = char> {}
+impl<I: super::input::InputOnce<Token = char>> InputOnce for I {}
+
 pub trait Input: super::input::Input<Token = char> {}
 impl<I: super::input::Input<Token = char>> Input for I {}
 
@@ -40,22 +44,22 @@ impl<I: super::input::Seq<Token = char>> Seq for I {}
 
 /// Accepts one uppercase and one lowercase Latin letter.
 #[inline(always)]
-pub fn ascii_latin<I: Input, E: ParseError<I>, C, S: Clone>() -> impl Parser<I, char, E, C, S> {
+pub fn ascii_latin<I: InputOnce, E: ParseError<I>, C, S>() -> impl Parser<I, char, E, C, S> {
     satisfy(|c: &char| matches!(c, 'a'..='z' | 'A'..='Z'))
 }
 /// One Indian Arabic numeral is accepted.
 #[inline(always)]
-pub fn ascii_num<I: Input, E: ParseError<I>, C, S: Clone>() -> impl ParserOnce<I, char, E, C, S> {
+pub fn ascii_num<I: InputOnce, E: ParseError<I>, C, S>() -> impl ParserOnce<I, char, E, C, S> {
     satisfy(|c: &char| matches!(c, '0'..='9'))
 }
 /// Accept upper and lower case Latin letters or one of the Indo-Arabic numerals.
 #[inline(always)]
-pub fn ascii_latin_num<I: Input, E: ParseError<I>, C, S: Clone>() -> impl ParserOnce<I, char, E, C, S> {
+pub fn ascii_latin_num<I: InputOnce, E: ParseError<I>, C, S>() -> impl ParserOnce<I, char, E, C, S> {
     satisfy(|c: &char| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9'))
 }
 /// Accepts a single ASCII character.
 #[inline(always)]
-pub fn ascii<I: Input, E: ParseError<I>, C, S: Clone>() -> impl ParserOnce<I, char, E, C, S> {
+pub fn ascii<I: InputOnce, E: ParseError<I>, C, S>() -> impl ParserOnce<I, char, E, C, S> {
     satisfy(|c: &char| c < &'\u{128}')
 }
 
@@ -169,7 +173,7 @@ pub fn is_space(c: &char) -> bool {
 
 /// Accepts a single newline character, but treats `"\r\n"` as one.
 #[inline(always)]
-pub fn newline<I: Input, E: ParseError<I>, S: Clone, C>() -> impl ParserOnce<I, (), E, C, S>
+pub fn newline<I: Input, E: ParseError<I>, S: Save, C>() -> impl ParserOnce<I, (), E, C, S>
 where
     E::Message: From<error::Unexpected<error::Token<char>>>
         + From<error::Expected<error::Token<char>>>
@@ -185,7 +189,7 @@ where
 
 /// A single whitespace character is accepted, excluding newline characters.
 #[inline(always)]
-pub fn no_break<I: Input, E: ParseError<I>, S: Clone, C>() -> impl ParserOnce<I, (), E, C, S> {
+pub fn no_break<I: InputOnce, E: ParseError<I>, S, C>() -> impl ParserOnce<I, (), E, C, S> {
     satisfy_map(|c: &char| match get_sp_kind(c)? {
         SpaceKind::Indentable(_) | SpaceKind::Other(_) => Some(()),
         _ => None,
@@ -194,35 +198,35 @@ pub fn no_break<I: Input, E: ParseError<I>, S: Clone, C>() -> impl ParserOnce<I,
 
 // Take one non-space character
 #[inline(always)]
-pub fn no_ws<I: Input, E: ParseError<I>, S: Clone, C>() -> impl ParserOnce<I, char, E, C, S> {
+pub fn no_ws<I: InputOnce, E: ParseError<I>, S, C>() -> impl ParserOnce<I, char, E, C, S> {
     satisfy(|c: &char| get_sp_kind(c).is_none())
 }
 
 /// Accept any single space character.
 #[inline(always)]
-pub fn space<I: Input, E: ParseError<I>, S: Clone, C>() -> impl ParserOnce<I, (), E, C, S> {
+pub fn space<I: InputOnce, E: ParseError<I>, S, C>() -> impl ParserOnce<I, (), E, C, S> {
     satisfy_map(get_sp_kind).to(())
 }
 
 /// Greedily accepts a sequence of whitespace characters that do not contain a newline character.
 #[inline(always)]
-pub fn no_break_ws<I: Input, E: ParseError<I>, S: Clone, C>() -> impl ParserOnce<I, (), E, C, S> {
+pub fn no_break_ws<I: Input, E: ParseError<I>, S, C>() -> impl ParserOnce<I, (), E, C, S> {
     no_state(no_break.skip_many())
 }
 
 /// It greedily accepts a sequence of one or more whitespace characters, not including newline characters.
 #[inline(always)]
-pub fn no_break_ws1<I: Input, E: ParseError<I>, S: Clone, C>() -> impl ParserOnce<I, (), E, C, S> {
+pub fn no_break_ws1<I: Input, E: ParseError<I>, S, C>() -> impl ParserOnce<I, (), E, C, S> {
     no_state(no_break.skip_many1())
 }
 
 /// A sequence of whitespace characters is greedily accepted.
 #[inline(always)]
-pub fn ws<I: Input, E: ParseError<I>, S: Clone, C>() -> impl ParserOnce<I, (), E, C, S> {
+pub fn ws<I: Input, E: ParseError<I>, S, C>() -> impl ParserOnce<I, (), E, C, S> {
     no_state(satisfy_map(get_sp_kind).skip_many())
 }
 /// A sequence of one or more whitespace characters will be greedily accepted.
 #[inline(always)]
-pub fn ws1<I: Input, E: ParseError<I>, S: Clone, C>() -> impl ParserOnce<I, (), E, C, S> {
+pub fn ws1<I: Input, E: ParseError<I>, S, C>() -> impl ParserOnce<I, (), E, C, S> {
     no_state(satisfy_map(get_sp_kind).skip_many1())
 }

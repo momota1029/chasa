@@ -178,7 +178,7 @@ pub mod prelude {
     #[doc(inline)]
     pub use super::fold::{fold, fold1, sep_extend, sep_extend1, sep_fold, sep_fold1, sep_reduce, tail_rec};
     #[doc(inline)]
-    pub use super::input::{pos_str, Input, Seq};
+    pub use super::input::{pos_str, Input, Seq,Save};
     #[doc(inline)]
     pub use super::many::{many, many1, take};
     #[doc(inline)]

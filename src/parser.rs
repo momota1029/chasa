@@ -2,6 +2,7 @@ use std::{fmt::Display, fmt::Write, hash::Hash, marker::PhantomData};
 
 use crate::{
     combi::OrWith,
+    input::InputOnce,
     many::{ManyBind, SepBind},
 };
 
@@ -15,20 +16,20 @@ use super::{
     fold::{
         fold, fold1, Extend1Parser, ExtendParser, Fold, Fold1, SepExtend, SepExtend1, SepFold, SepFold1, SepReduce,
     },
-    input::{Input, PositionPrinter},
+    input::{PositionPrinter, Save},
     many::{many, many1, take, Many, Many1, ManyIterator, ManyMap, Repeat, Sep, Sep1, SepIterator, SepMap},
     prim::MutParser,
     util::{Consume, RangeWithOrd},
 };
 
-pub struct Args<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> {
+pub struct Args<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> {
     pub input: &'a mut I,
     pub config: &'a C,
     pub state: &'a mut S,
-    pub consume: &'a mut Consume<'b, (I, S)>,
+    pub consume: &'a mut Consume<'b>,
     pub error: &'a mut E,
 }
-impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
+impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
     #[inline(always)]
     pub fn by_ref<'c>(&'c mut self) -> Args<'c, 'b, I, E, C, S> {
         let Args { input, config, state, consume, error } = self;
@@ -50,11 +51,11 @@ impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
 }
 
 pub trait ParserOnce<
-    I: Input,
+    I: InputOnce,
     O,
-    E: ParseError<I> = Option<StdParseError<<I as Input>::Token, <I as Input>::Position>>,
+    E: ParseError<I> = Option<StdParseError<<I as InputOnce>::Token, <I as InputOnce>::Position>>,
     C = (),
-    S: Clone = (),
+    S = (),
 >
 {
     fn run_once(self, args: Args<I, E, C, S>) -> Option<O>;
@@ -201,11 +202,11 @@ pub trait ParserOnce<
 }
 
 pub trait Parser<
-    I: Input,
+    I: InputOnce,
     O,
-    E: ParseError<I> = Option<StdParseError<<I as Input>::Token, <I as Input>::Position>>,
+    E: ParseError<I> = Option<StdParseError<<I as InputOnce>::Token, <I as InputOnce>::Position>>,
     C = (),
-    S: Clone = (),
+    S = (),
 >: ParserOnce<I, O, E, C, S>
 {
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<O>;
@@ -327,6 +328,8 @@ pub trait Parser<
     fn skip_many(self) -> ExtendParser<(), Value<Self, (), O>, ()>
     where
         Self: Sized,
+        I: Save,
+        S: Save,
     {
         self.to(()).extend(())
     }
@@ -334,6 +337,8 @@ pub trait Parser<
     fn skip_many1(self) -> Extend1Parser<(), Value<Self, (), O>, ()>
     where
         Self: Sized,
+        I: Save,
+        S: Save,
     {
         self.to(()).extend1(())
     }
@@ -341,6 +346,8 @@ pub trait Parser<
     fn many<T: FromIterator<O>>(self) -> Many<Self, T, O>
     where
         Self: Sized,
+        I: Save,
+        S: Save,
     {
         many(self)
     }
@@ -348,6 +355,8 @@ pub trait Parser<
     fn many1<T: FromIterator<O>>(self) -> Many1<Self, T, O>
     where
         Self: Sized,
+        I: Save,
+        S: Save,
     {
         many1(self)
     }
@@ -454,13 +463,13 @@ pub trait Parser<
     }
 }
 
-impl<P: ParserOnce<I, O>, I: Input, O> Pat<I, O> for P
+impl<P: ParserOnce<I, O>, I: InputOnce, O> Pat<I, O> for P
 where
     I::Token: Hash + Eq,
     StdParseErrorFor<I::Token>: From<I::Message>,
 {
 }
-pub trait Pat<I: Input, O>: ParserOnce<I, O>
+pub trait Pat<I: InputOnce, O>: ParserOnce<I, O>
 where
     I::Token: Hash + Eq,
     StdParseErrorFor<I::Token>: From<I::Message>,
@@ -512,7 +521,9 @@ where
     }
 
     #[inline(always)]
-    fn parse(self, input: &mut I) -> Result<O, Option<StdParseError<<I as Input>::Token, <I as Input>::Position>>>
+    fn parse(
+        self, input: &mut I,
+    ) -> Result<O, Option<StdParseError<<I as InputOnce>::Token, <I as InputOnce>::Position>>>
     where
         Self: Sized,
     {

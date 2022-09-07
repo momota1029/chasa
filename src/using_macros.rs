@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 use super::{
     combi::Value,
     error::ParseError,
-    parser::Args,
-    prelude::{Input, Parser, ParserOnce},
+    parser::{Parser, ParserOnce,Args},
+    input::{Input,Save},
 };
 
 /**
@@ -207,15 +207,15 @@ macro_rules! choice_run {
     };
     ($run:ident, $input:ident, $config:ident, $state:ident, $consume:ident, $error:ident, $p1:ident, $($ps:ident),+) => {
         match $consume
-            .cons(($input.clone(), $state.clone()), |consume|
-                $p1.$run(Args { input: $input, config: $config, state: $state, consume, error: $error })
+            .cons(($input.save(), $state.save()), |mut consume|
+                $p1.$run(Args { input: $input, config: $config, state: $state, consume: &mut consume, error: $error })
             )
         {
             (None, None) => None,
             (Some(o), _) => Some(o),
             (None, Some((input_bak, state_bak))) => {
-                *$input = input_bak;
-                *$state = state_bak;
+                $input.load(input_bak);
+                $state.load(state_bak);
                 choice_run!($run,$input,$config,$state,$consume,$error,$($ps),+)
             },
         }
@@ -223,7 +223,7 @@ macro_rules! choice_run {
 }
 macro_rules! choice_derive {
     ($($p:ident $t:ident),+) => {
-        impl<I: Input, O, E: ParseError<I>, C, S: Clone, $($t: ParserOnce<I, O, E, C, S>),+> ParserOnce<I, O, E, C, S> for Choice<($($t,)+)> {
+        impl<I: Input + Save, O, E: ParseError<I>, C, S: Save, $($t: ParserOnce<I, O, E, C, S>),+> ParserOnce<I, O, E, C, S> for Choice<($($t,)+)> {
             #[inline(always)]
             fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {
                 let ($($p,)+) = self.0;
@@ -231,7 +231,7 @@ macro_rules! choice_derive {
                 choice_run!(run_once, input, config, state, consume, error, $($p),+)
             }
         }
-        impl<I: Input, O, E: ParseError<I>, C, S: Clone, $($t: Parser<I, O, E, C, S>),+> Parser<I, O, E, C, S> for Choice<($($t,)+)> {
+        impl<I: Input + Save, O, E: ParseError<I>, C, S: Save, $($t: Parser<I, O, E, C, S>),+> Parser<I, O, E, C, S> for Choice<($($t,)+)> {
             #[inline(always)]
             fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
                 let ($($p,)+) = &mut self.0;

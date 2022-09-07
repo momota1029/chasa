@@ -1,30 +1,34 @@
 use std::{iter, marker::PhantomData, ops::ControlFlow};
 
+use crate::input::InputOnce;
+
 use super::{
     cont::Cont,
     error::ParseError,
-    input::Input,
+    input::{Input, Save},
     parser::{Args, Parser, ParserOnce},
     util::Consume,
 };
 
-fn run_fold<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>>(
+fn run_fold<I: Input, O, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>>(
     init: O, mut p: P, mut accum: impl FnMut(O, T) -> O, input: &mut I, config: &C, state: &mut S,
-    consume: &mut Consume<(I, S)>, error: &mut E,
+    consume: &mut Consume, error: &mut E,
 ) -> Option<O> {
-    let (bak_input, bak_state) = (input.clone(), state.clone());
-    match consume.cons((bak_input, bak_state), |consume| p.run(Args { input, config, state, consume, error: error })) {
+    let (bak_input, bak_state) = (input.save(), state.save());
+    match consume
+        .cons((bak_input, bak_state), |mut consume| p.run(Args { input, config, state, consume: &mut consume, error }))
+    {
         (Some(item), _) => run_fold(accum(init, item), p, accum, input, config, state, consume, error),
         (None, None) => None,
         (None, Some((bak_input, bak_state))) => {
-            *input = bak_input;
-            *state = bak_state;
+            input.load(bak_input);
+            state.load(bak_state);
             Some(init)
         },
     }
 }
 
-impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
+impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Save> Args<'a, 'b, I, E, C, S> {
     #[inline(always)]
     pub fn fold1<T, O, P: Parser<I, T, E, C, S>>(
         self, init: O, mut p: P, accum: impl Fn(O, T) -> O,
@@ -65,7 +69,7 @@ impl<T: Copy, P: Copy, F: Copy, O> Copy for Fold<T, P, F, O> {}
 pub fn fold<T, P, F, O>(init: T, parser: P, succ: F) -> Fold<T, P, F, O> {
     Fold(init, parser, succ, PhantomData)
 }
-impl<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F: FnMut(O, T) -> O>
+impl<I: Input, O, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>, F: FnMut(O, T) -> O>
     ParserOnce<I, O, E, C, S> for Fold<O, P, F, T>
 {
     #[inline(always)]
@@ -74,7 +78,7 @@ impl<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F:
         run_fold(self.0, self.1, self.2, input, config, state, consume, error)
     }
 }
-impl<I: Input, O: Clone, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F: FnMut(O, T) -> O>
+impl<I: Input, O: Clone, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>, F: FnMut(O, T) -> O>
     Parser<I, O, E, C, S> for Fold<O, P, F, T>
 {
     #[inline(always)]
@@ -105,7 +109,7 @@ impl<T: Copy, P: Copy, F: Copy, O> Copy for Fold1<T, P, F, O> {}
 pub fn fold1<T, P, F, O>(init: T, parser: P, succ: F) -> Fold1<T, P, F, O> {
     Fold1(init, parser, succ, PhantomData)
 }
-impl<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F: FnMut(O, T) -> O>
+impl<I: Input, O, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>, F: FnMut(O, T) -> O>
     ParserOnce<I, O, E, C, S> for Fold1<O, P, F, T>
 {
     #[inline(always)]
@@ -115,7 +119,7 @@ impl<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F:
         run_fold(init, self.1, self.2, input, config, state, consume, error)
     }
 }
-impl<I: Input, O: Clone, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>, F: FnMut(O, T) -> O>
+impl<I: Input, O: Clone, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>, F: FnMut(O, T) -> O>
     Parser<I, O, E, C, S> for Fold1<O, P, F, T>
 {
     #[inline(always)]
@@ -127,26 +131,28 @@ impl<I: Input, O: Clone, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C,
 }
 
 #[inline(always)]
-pub(crate) fn run_sep_second_part<O, T, I: Input, E: ParseError<I>, C, S: Clone>(
+pub(crate) fn run_sep_second_part<O, T, I: Input, E: ParseError<I>, C, S: Save>(
     item_parser: &mut impl Parser<I, O, E, C, S>, sep_parser: &mut impl Parser<I, T, E, C, S>, input: &mut I,
-    config: &C, state: &mut S, consume: &mut Consume<(I, S)>, error: &mut E,
+    config: &C, state: &mut S, consume: &mut Consume, error: &mut E,
 ) -> Option<(T, O)> {
-    let (bak_input, bak_state) = (input.clone(), state.clone());
-    match Consume::new().drop_test(|consume| sep_parser.run(Args { input, config, state, consume, error: error })) {
+    let (bak_input, bak_state) = (input.save(), state.save());
+    match Consume::new()
+        .is_dropped(|mut consume| sep_parser.run(Args { input, config, state, consume: &mut consume, error }))
+    {
         (None, consumed) => {
             if consumed {
                 consume.drop();
             }
             None
         },
-        (Some(sep), _) => match consume.cons((bak_input, bak_state), |consume| {
-            item_parser.run(Args { input, config, state, consume, error: error })
+        (Some(sep), _) => match consume.cons((bak_input, bak_state), |mut consume| {
+            item_parser.run(Args { input, config, state, consume: &mut consume, error })
         }) {
             (None, None) => None,
             (Some(item), _) => Some((sep, item)),
             (None, Some((bak_input, bak_state))) => {
-                *input = bak_input;
-                *state = bak_state;
+                input.load(bak_input);
+                state.load(bak_state);
                 None
             },
         },
@@ -154,21 +160,11 @@ pub(crate) fn run_sep_second_part<O, T, I: Input, E: ParseError<I>, C, S: Clone>
 }
 
 #[inline(always)]
-fn run_sep_fold<
-    I: Input,
-    O,
-    T,
-    E: ParseError<I>,
-    C,
-    S: Clone,
-    P: Parser<I, T, E, C, S>,
-    D,
-    Q: Parser<I, D, E, C, S>,
->(
+fn run_sep_fold<I: Input, O, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>, D, Q: Parser<I, D, E, C, S>>(
     init: O, mut item_parser: P, sep_parser: Q, mut accum: impl FnMut(O, T) -> O, input: &mut I, config: &C,
-    state: &mut S, consume: &mut Consume<(I, S)>, error: &mut E,
+    state: &mut S, consume: &mut Consume, error: &mut E,
 ) -> Option<O> {
-    match item_parser.by_ref().or_not().run(Args { input, config, state, consume, error: error })? {
+    match item_parser.by_ref().or_not().run(Args { input, config, state, consume, error })? {
         None => Some(init),
         Some(item) => {
             run_sep_fold_second(accum(init, item), item_parser, sep_parser, accum, input, config, state, consume, error)
@@ -182,16 +178,16 @@ fn run_sep_fold1<
     T,
     E: ParseError<I>,
     C,
-    S: Clone,
+    S: Save,
     P: Parser<I, T, E, C, S>,
     D,
     Q: Parser<I, D, E, C, S>,
 >(
     init: O, mut item_parser: P, sep_parser: Q, mut accum: impl FnMut(O, T) -> O, input: &mut I, config: &C,
-    state: &mut S, consume: &mut Consume<(I, S)>, error: &mut E,
+    state: &mut S, consume: &mut Consume, error: &mut E,
 ) -> Option<O> {
     run_sep_fold_second(
-        accum(init, item_parser.run(Args { input, config, state, consume, error: error })?),
+        accum(init, item_parser.run(Args { input, config, state, consume, error })?),
         item_parser,
         sep_parser,
         accum,
@@ -208,31 +204,31 @@ fn run_sep_fold_second<
     T,
     E: ParseError<I>,
     C,
-    S: Clone,
+    S: Save,
     P: Parser<I, T, E, C, S>,
     D,
     Q: Parser<I, D, E, C, S>,
 >(
     init: O, mut item_parser: P, mut sep_parser: Q, mut accum: impl FnMut(O, T) -> O, input: &mut I, config: &C,
-    state: &mut S, consume: &mut Consume<(I, S)>, error: &mut E,
+    state: &mut S, consume: &mut Consume, error: &mut E,
 ) -> Option<O> {
-    let (bak_input, bak_state) = (input.clone(), state.clone());
-    match consume.cons((bak_input, bak_state), |consume| {
-        run_sep_second_part(&mut item_parser, &mut sep_parser, input, config, state, consume, error)
+    let (bak_input, bak_state) = (input.save(), state.save());
+    match consume.cons((bak_input, bak_state), |mut consume| {
+        run_sep_second_part(&mut item_parser, &mut sep_parser, input, config, state, &mut consume, error)
     }) {
         (Some((_, item)), _) => {
             run_sep_fold_second(accum(init, item), item_parser, sep_parser, accum, input, config, state, consume, error)
         },
         (None, None) => None,
         (None, Some((bak_input, bak_state))) => {
-            *input = bak_input;
-            *state = bak_state;
+            input.load(bak_input);
+            state.load(bak_state);
             Some(init)
         },
     }
 }
 
-impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
+impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Save> Args<'a, 'b, I, E, C, S> {
     #[inline(always)]
     pub fn sep_fold1<T, U, O, P: Parser<I, T, E, C, S>, Q: Parser<I, U, E, C, S>>(
         self, init: O, item_parser: P, sep_parser: Q, accum: impl Fn(O, T) -> O,
@@ -254,7 +250,7 @@ impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
         )
     }
 }
-impl<'a, 'b, I: Input, O, E: ParseError<I>, C, S: Clone> Cont<'a, 'b, I, O, E, C, S> {
+impl<'a, 'b, I: Input, O, E: ParseError<I>, C, S: Save> Cont<'a, 'b, I, O, E, C, S> {
     #[inline(always)]
     pub fn sep_fold1<T, U, P: Parser<I, T, E, C, S>, Q: Parser<I, U, E, C, S>>(
         self, item_parser: P, sep_parser: Q, accum: impl Fn(O, T) -> O,
@@ -310,7 +306,7 @@ impl<
         U,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
         F: FnMut(O, T) -> O,
@@ -329,7 +325,7 @@ impl<
         U,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
         F: FnMut(O, T) -> O,
@@ -392,7 +388,7 @@ impl<
         U,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
         F: FnMut(O, T) -> O,
@@ -411,7 +407,7 @@ impl<
         U,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
         F: FnMut(O, T) -> O,
@@ -435,9 +431,9 @@ impl<
 }
 
 #[inline(always)]
-fn run_sep_reduce<I: Input, O, T, E: ParseError<I>, C, S: Clone>(
+fn run_sep_reduce<I: Input, O, T, E: ParseError<I>, C, S: Save>(
     mut item_p: impl Parser<I, O, E, C, S>, sep_p: impl Parser<I, T, E, C, S>, accum: impl FnMut(O, T, O) -> O,
-    input: &mut I, config: &C, state: &mut S, consume: &mut Consume<(I, S)>, error: &mut E,
+    input: &mut I, config: &C, state: &mut S, consume: &mut Consume, error: &mut E,
 ) -> Option<O> {
     run_sep_reduce_second(
         item_p.run(Args { input, config, state, consume, error: error })?,
@@ -451,27 +447,27 @@ fn run_sep_reduce<I: Input, O, T, E: ParseError<I>, C, S: Clone>(
         error,
     )
 }
-fn run_sep_reduce_second<I: Input, O, T, E: ParseError<I>, C, S: Clone>(
+fn run_sep_reduce_second<I: Input, O, T, E: ParseError<I>, C, S: Save>(
     sum: O, mut item_p: impl Parser<I, O, E, C, S>, mut sep_p: impl Parser<I, T, E, C, S>,
-    mut accum: impl FnMut(O, T, O) -> O, input: &mut I, config: &C, state: &mut S, consume: &mut Consume<(I, S)>,
+    mut accum: impl FnMut(O, T, O) -> O, input: &mut I, config: &C, state: &mut S, consume: &mut Consume,
     error: &mut E,
 ) -> Option<O> {
-    let (bak_input, bak_state) = (input.clone(), state.clone());
-    match consume.cons((bak_input, bak_state), |consume| {
-        run_sep_second_part(&mut item_p, &mut sep_p, input, config, state, consume, error)
+    let (bak_input, bak_state) = (input.save(), state.save());
+    match consume.cons((bak_input, bak_state), |mut consume| {
+        run_sep_second_part(&mut item_p, &mut sep_p, input, config, state, &mut consume, error)
     }) {
         (Some((op, item)), _) => {
             run_sep_reduce_second(accum(sum, op, item), item_p, sep_p, accum, input, config, state, consume, error)
         },
         (None, None) => None,
         (None, Some((bak_input, bak_state))) => {
-            *input = bak_input;
-            *state = bak_state;
+            input.load(bak_input);
+            state.load(bak_state);
             Some(sum)
         },
     }
 }
-impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
+impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Save> Args<'a, 'b, I, E, C, S> {
     #[inline(always)]
     pub fn sep_reduce<O, T>(
         self, item_parser: impl Parser<I, O, E, C, S>, sep_parser: impl Parser<I, T, E, C, S>,
@@ -484,7 +480,7 @@ impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
         )
     }
 }
-impl<'a, 'b, I: Input, O, E: ParseError<I>, C, S: Clone> Cont<'a, 'b, I, O, E, C, S> {
+impl<'a, 'b, I: Input, O, E: ParseError<I>, C, S: Save> Cont<'a, 'b, I, O, E, C, S> {
     #[inline(always)]
     pub fn sep_reduce<T>(
         self, item_parser: impl Parser<I, O, E, C, S>, sep_parser: impl Parser<I, T, E, C, S>,
@@ -520,7 +516,7 @@ pub fn sep_reduce<
     I: Input,
     C,
     E: ParseError<I>,
-    S: Clone,
+    S: Save,
     P: Parser<I, O, E, C, S>,
     Q: Parser<I, T, E, C, S>,
     F: FnMut(O, T, O) -> O,
@@ -536,7 +532,7 @@ impl<
         T,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, O, E, C, S>,
         Q: Parser<I, T, E, C, S>,
         F: FnMut(O, T, O) -> O,
@@ -554,7 +550,7 @@ impl<
         T,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, O, E, C, S>,
         Q: Parser<I, T, E, C, S>,
         F: FnMut(O, T, O) -> O,
@@ -567,28 +563,28 @@ impl<
     }
 }
 
-fn run_extend<O: Extend<T>, I: Input, T, E: ParseError<I>, C, S: Clone>(
+fn run_extend<O: Extend<T>, I: Input, T, E: ParseError<I>, C, S: Save>(
     xs: &mut O, mut item_p: impl Parser<I, T, E, C, S>, input: &mut I, config: &C, state: &mut S,
-    consume: &mut Consume<(I, S)>, error: &mut E,
+    consume: &mut Consume, error: &mut E,
 ) -> bool {
-    let (bak_input, bak_state) = (input.clone(), state.clone());
-    match consume
-        .cons((bak_input, bak_state), |consume| item_p.run(Args { input, config, state, consume, error: error }))
-    {
+    let (bak_input, bak_state) = (input.save(), state.save());
+    match consume.cons((bak_input, bak_state), |mut consume| {
+        item_p.run(Args { input, config, state, consume: &mut consume, error })
+    }) {
         (Some(item), _) => {
             xs.extend(iter::once(item));
             run_extend(xs, item_p, input, config, state, consume, error)
         },
         (None, None) => false,
         (None, Some((bak_input, bak_state))) => {
-            *input = bak_input;
-            *state = bak_state;
+            input.load(bak_input);
+            state.load(bak_state);
             true
         },
     }
 }
 
-impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
+impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Save> Args<'a, 'b, I, E, C, S> {
     #[inline(always)]
     pub fn extend1<O: Extend<T>, T, P: Parser<I, T, E, C, S>>(
         self, mut collection: O, mut p: P,
@@ -628,7 +624,7 @@ impl<O: Clone, P: Clone, T> Clone for ExtendParser<O, P, T> {
     }
 }
 impl<O: Copy, P: Copy, T> Copy for ExtendParser<O, P, T> {}
-impl<I: Input, O: Extend<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>> ParserOnce<I, O, E, C, S>
+impl<I: Input, O: Extend<T>, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>> ParserOnce<I, O, E, C, S>
     for ExtendParser<O, P, T>
 {
     #[inline(always)]
@@ -641,7 +637,7 @@ impl<I: Input, O: Extend<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E
         }
     }
 }
-impl<I: Input, O: Extend<T> + Clone, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>> Parser<I, O, E, C, S>
+impl<I: Input, O: Extend<T> + Clone, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>> Parser<I, O, E, C, S>
     for ExtendParser<O, P, T>
 {
     #[inline(always)]
@@ -672,7 +668,7 @@ impl<O: Clone, P: Clone, T> Clone for Extend1Parser<O, P, T> {
     }
 }
 impl<O: Copy, P: Copy, T> Copy for Extend1Parser<O, P, T> {}
-impl<I: Input, O: Extend<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>> ParserOnce<I, O, E, C, S>
+impl<I: Input, O: Extend<T>, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>> ParserOnce<I, O, E, C, S>
     for Extend1Parser<O, P, T>
 {
     #[inline(always)]
@@ -686,7 +682,7 @@ impl<I: Input, O: Extend<T>, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E
         }
     }
 }
-impl<I: Input, O: Extend<T> + Clone, T, E: ParseError<I>, C, S: Clone, P: Parser<I, T, E, C, S>> Parser<I, O, E, C, S>
+impl<I: Input, O: Extend<T> + Clone, T, E: ParseError<I>, C, S: Save, P: Parser<I, T, E, C, S>> Parser<I, O, E, C, S>
     for Extend1Parser<O, P, T>
 {
     #[inline(always)]
@@ -703,9 +699,9 @@ impl<I: Input, O: Extend<T> + Clone, T, E: ParseError<I>, C, S: Clone, P: Parser
 }
 
 #[inline(always)]
-fn run_sep_extend<I: Input, O: Extend<T>, T, U, E: ParseError<I>, C, S: Clone>(
+fn run_sep_extend<I: Input, O: Extend<T>, T, U, E: ParseError<I>, C, S: Save>(
     xs: &mut O, mut item_p: impl Parser<I, T, E, C, S>, sep_p: impl Parser<I, U, E, C, S>, input: &mut I, config: &C,
-    state: &mut S, consume: &mut Consume<(I, S)>, error: &mut E,
+    state: &mut S, consume: &mut Consume, error: &mut E,
 ) -> bool {
     match item_p.by_ref().or_not().run(Args { input, config, state, consume, error: error }) {
         None => false,
@@ -717,9 +713,9 @@ fn run_sep_extend<I: Input, O: Extend<T>, T, U, E: ParseError<I>, C, S: Clone>(
     }
 }
 #[inline(always)]
-fn run_sep_extend1<I: Input, O: Extend<T>, T, U, E: ParseError<I>, C, S: Clone>(
+fn run_sep_extend1<I: Input, O: Extend<T>, T, U, E: ParseError<I>, C, S: Save>(
     xs: &mut O, mut item_p: impl Parser<I, T, E, C, S>, sep_p: impl Parser<I, U, E, C, S>, input: &mut I, config: &C,
-    state: &mut S, consume: &mut Consume<(I, S)>, error: &mut E,
+    state: &mut S, consume: &mut Consume, error: &mut E,
 ) -> bool {
     match item_p.run(Args { input, config, state, consume, error: error }) {
         None => false,
@@ -729,13 +725,13 @@ fn run_sep_extend1<I: Input, O: Extend<T>, T, U, E: ParseError<I>, C, S: Clone>(
         },
     }
 }
-fn run_sep_extend_second<I: Input, O: Extend<T>, T, U, E: ParseError<I>, C, S: Clone>(
+fn run_sep_extend_second<I: Input, O: Extend<T>, T, U, E: ParseError<I>, C, S: Save>(
     xs: &mut O, mut item_p: impl Parser<I, T, E, C, S>, mut sep_p: impl Parser<I, U, E, C, S>, input: &mut I,
-    config: &C, state: &mut S, consume: &mut Consume<(I, S)>, error: &mut E,
+    config: &C, state: &mut S, consume: &mut Consume, error: &mut E,
 ) -> bool {
-    let (bak_input, bak_state) = (input.clone(), state.clone());
-    match consume.cons((bak_input, bak_state), |consume| {
-        run_sep_second_part(&mut item_p, &mut sep_p, input, config, state, consume, error)
+    let (bak_input, bak_state) = (input.save(), state.save());
+    match consume.cons((bak_input, bak_state), |mut consume| {
+        run_sep_second_part(&mut item_p, &mut sep_p, input, config, state, &mut consume, error)
     }) {
         (Some((_, item)), _) => {
             xs.extend(iter::once(item));
@@ -743,14 +739,14 @@ fn run_sep_extend_second<I: Input, O: Extend<T>, T, U, E: ParseError<I>, C, S: C
         },
         (None, None) => false,
         (None, Some((bak_input, bak_state))) => {
-            *input = bak_input;
-            *state = bak_state;
+            input.load(bak_input);
+            state.load(bak_state);
             true
         },
     }
 }
 
-impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
+impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Save> Args<'a, 'b, I, E, C, S> {
     #[inline(always)]
     pub fn sep_extend1<T, U, O: Extend<T>>(
         self, mut collection: O, item_parser: impl Parser<I, T, E, C, S>, sep_parser: impl Parser<I, U, E, C, S>,
@@ -775,7 +771,7 @@ impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
     }
 }
 
-impl<'a, 'b, I: Input, O, E: ParseError<I>, C, S: Clone> Cont<'a, 'b, I, O, E, C, S> {
+impl<'a, 'b, I: Input, O, E: ParseError<I>, C, S: Save> Cont<'a, 'b, I, O, E, C, S> {
     #[inline(always)]
     pub fn sep_extend1<T, U>(
         self, item_parser: impl Parser<I, T, E, C, S>, sep_parser: impl Parser<I, U, E, C, S>,
@@ -819,7 +815,7 @@ impl<
         U,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
     > ParserOnce<I, O, E, C, S> for SepExtend<O, P, Q, T, U>
@@ -841,7 +837,7 @@ impl<
         U,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
     > Parser<I, O, E, C, S> for SepExtend<O, P, Q, T, U>
@@ -882,7 +878,7 @@ impl<
         U,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
     > ParserOnce<I, O, E, C, S> for SepExtend1<O, P, Q, T, U>
@@ -904,7 +900,7 @@ impl<
         U,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: Parser<I, T, E, C, S>,
         Q: Parser<I, U, E, C, S>,
     > Parser<I, O, E, C, S> for SepExtend1<O, P, Q, T, U>
@@ -921,7 +917,7 @@ impl<
     }
 }
 
-fn run_tail_rec<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, ControlFlow<O, T>, E, C, S>>(
+fn run_tail_rec<I: InputOnce, O, T, E: ParseError<I>, C, S: Save, P: ParserOnce<I, ControlFlow<O, T>, E, C, S>>(
     init: T, mut parser: impl FnMut(T) -> P, mut args: Args<I, E, C, S>,
 ) -> Option<O> {
     match parser(init).run_once(args.by_ref())? {
@@ -929,7 +925,7 @@ fn run_tail_rec<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, 
         ControlFlow::Continue(k) => run_tail_rec(k, parser, args),
     }
 }
-impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
+impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S: Save> Args<'a, 'b, I, E, C, S> {
     pub fn tail_rec<T, O>(
         self, init: T, mut f: impl FnMut(T, Self) -> Cont<'a, 'b, I, ControlFlow<O, T>, E, C, S>,
     ) -> Cont<'a, 'b, I, O, E, C, S> {
@@ -940,7 +936,7 @@ impl<'a, 'b, I: Input, E: ParseError<I>, C, S: Clone> Args<'a, 'b, I, E, C, S> {
         }
     }
 }
-impl<'a, 'b, I: Input, O, E: ParseError<I>, C, S: Clone> Cont<'a, 'b, I, O, E, C, S> {
+impl<'a, 'b, I: InputOnce, O, E: ParseError<I>, C, S: Save> Cont<'a, 'b, I, O, E, C, S> {
     #[inline(always)]
     pub fn tail_rec<T>(
         self, f: impl FnMut(O, Args<'a, 'b, I, E, C, S>) -> Cont<'a, 'b, I, ControlFlow<T, O>, E, C, S>,
@@ -967,12 +963,12 @@ pub struct TailRec<T, F> {
 }
 #[inline(always)]
 pub fn tail_rec<
-    I: Input,
+    I: InputOnce,
     O,
     T,
     E: ParseError<I>,
     C,
-    S: Clone,
+    S: Save,
     P: ParserOnce<I, ControlFlow<O, T>, E, C, S>,
     F: FnMut(T) -> P,
 >(
@@ -980,8 +976,16 @@ pub fn tail_rec<
 ) -> TailRec<T, F> {
     TailRec { init, f }
 }
-impl<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, ControlFlow<O, T>, E, C, S>, F: FnMut(T) -> P>
-    ParserOnce<I, O, E, C, S> for TailRec<T, F>
+impl<
+        I: InputOnce,
+        O,
+        T,
+        E: ParseError<I>,
+        C,
+        S: Save,
+        P: ParserOnce<I, ControlFlow<O, T>, E, C, S>,
+        F: FnMut(T) -> P,
+    > ParserOnce<I, O, E, C, S> for TailRec<T, F>
 {
     #[inline(always)]
     fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {
@@ -989,12 +993,12 @@ impl<I: Input, O, T, E: ParseError<I>, C, S: Clone, P: ParserOnce<I, ControlFlow
     }
 }
 impl<
-        I: Input,
+        I: InputOnce,
         O,
         T: Clone,
         E: ParseError<I>,
         C,
-        S: Clone,
+        S: Save,
         P: ParserOnce<I, ControlFlow<O, T>, E, C, S>,
         F: FnMut(T) -> P,
     > Parser<I, O, E, C, S> for TailRec<T, F>
