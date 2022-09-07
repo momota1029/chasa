@@ -11,7 +11,7 @@ use chasa::char::prelude::*;
 // It reads a number of letters (numbers) from 0 to 9,
 let num = one_of('0'..='9').many1::<String>()
 // Interpreted as a number, errors are reported as a message.
-    .and_then(|str| str.parse::<u32>().map_err(error).map_err(message));
+    .and_then(|str| str.parse::<u32>().map_err(from_error));
 
 // Multiply by something separated by '*' and
 let prod = num.sep_reduce(char('*'), |a,_,b| a * b);
@@ -44,7 +44,7 @@ enum SExp {
     Term(String),
     List(Vec<SExp>),
 }
-fn sexp_like<'a>() -> impl Pat<&'a str, SExp> {
+fn sexp_like<I: Seq>() -> impl Pat<I, SExp> {
     // `run` prevents type recursion, but does not Box
     let term = satisfy(|c| !char::is_space(c) && c != &'(' && c != &')').many1();
     term.map(SExp::Term).or(run(sexp_like).sep(ws1).between(char('('), char(')')).map(SExp::List))
@@ -89,12 +89,12 @@ enum JSON {
     Null,
 }
 
-fn json_parser<'a>() -> impl Pat<&'a str, JSON> {
+fn json_parser<I: Seq>() -> impl Pat<I, JSON> {
     any.case(|c, k| match c {
         '{' => k
             .then(
                 char('"')
-                    .right(string_char.many_with(|iter| iter.map_while(|x| x).collect::<String>()))
+                    .right(string_char.many_map(|iter| iter.map_while(|x| x).collect::<String>()))
                     .between(whitespace, whitespace)
                     .bind(|key| char(':').right(run(json_parser)).map_once(move |value: JSON| (key, value)))
                     .sep(char(',')),
@@ -102,7 +102,7 @@ fn json_parser<'a>() -> impl Pat<&'a str, JSON> {
             .left(char('}'))
             .map(JSON::Object),
         '[' => k.then(json_parser.sep(char(','))).left(char(']')).map(JSON::Array),
-        '"' => k.then(string_char.many_with(|iter| iter.map_while(|x| x).collect())).map(JSON::String),
+        '"' => k.then(string_char.many_map(|iter| iter.map_while(|x| x).collect())).map(JSON::String),
         '-' => k.then(any).bind(num_parser).map(|n| JSON::Number(-n)),
         c @ '0'..='9' => k.then(num_parser(c)).map(JSON::Number),
         't' => k.then(str("rue").to(JSON::True)),
@@ -113,11 +113,11 @@ fn json_parser<'a>() -> impl Pat<&'a str, JSON> {
     .between(whitespace, whitespace)
 }
 
-fn whitespace<'a>() -> impl Pat<&'a str, ()> {
+fn whitespace<I: Seq>() -> impl Pat<I, ()> {
     one_of("\t\r\n ").skip_many()
 }
 
-fn string_char<'a>() -> impl Pat<&'a str, Option<char>> {
+fn string_char<I: Seq>() -> impl Pat<I, Option<char>> {
     any.case(|c, k| match c {
         '\\' => k.then(any.case(|c, k| {
             match c {
@@ -133,7 +133,7 @@ fn string_char<'a>() -> impl Pat<&'a str, Option<char>> {
                     .then(
                         satisfy(|c| matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F'))
                             .repeat::<String, _>(4)
-                            .and_then(|str| u32::from_str_radix(&str, 16).map_err(|e| message(error(e))))
+                            .and_then(|str| u32::from_str_radix(&str, 16).map_err(from_error))
                             .and_then(|int| char::from_u32(int).ok_or(unexpected(format("invalid unicode char")))),
                     )
                     .map(Some),
@@ -145,7 +145,7 @@ fn string_char<'a>() -> impl Pat<&'a str, Option<char>> {
     })
 }
 
-fn num_parser<'a>(c: char) -> impl ParserOnce<&'a str, f64> {
+fn num_parser<I: Seq>(c: char) -> impl Pat<I, f64> {
     let digit = one_of('0'..='9');
     extend_with_str(c.to_string(), {
         skip_chain((
@@ -158,7 +158,7 @@ fn num_parser<'a>(c: char) -> impl ParserOnce<&'a str, f64> {
             one_of("eE").right(one_of("+-").or_not()).right(digit.skip_many1()).or_not(),
         ))
     })
-    .and_then_once(|(_, str)| str.parse::<f64>().map_err(|e| message(error(e))))
+    .and_then_once(|(_, str)| str.parse::<f64>().map_err(from_error))
 }
 
 assert_eq!(
