@@ -1,4 +1,9 @@
-use crate::{error, input::InputOnce};
+use crate::{
+    combi::before,
+    error,
+    input::{InputOnce, Save},
+    prim::{satisfy_map_once, satisfy_once, state_case_once, state_once},
+};
 
 use super::{
     error::ParseError,
@@ -16,6 +21,7 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
     pub fn done(self) -> Cont<'a, 'b, I, (), E, C, S> {
         Cont(Some(((), self)))
     }
+
     #[inline(always)]
     pub fn fail<M, O>(self, message: M) -> Cont<'a, 'b, I, O, E, C, S>
     where
@@ -27,6 +33,31 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
         Cont(None)
     }
 
+    #[inline(always)]
+    pub fn state<O>(self, f: impl FnOnce(&mut S) -> O) -> Cont<'a, 'b, I, O, E, C, S> {
+        self.then(state_once(f))
+    }
+    #[inline(always)]
+    pub fn state_case<O>(
+        self, f: impl for<'c, 'd> FnOnce(&'c mut S, Args<'c, 'd, I, E, C, ()>) -> Cont<'c, 'd, I, O, E, C, ()>,
+    ) -> Cont<'a, 'b, I, O, E, C, S> {
+        self.then(state_case_once(f))
+    }
+
+    #[inline(always)]
+    pub fn satisfy(self, f: impl FnOnce(&I::Token) -> bool) -> Cont<'a, 'b, I, I::Token, E, C, S>
+    where
+        E::Message: From<error::Unexpected<error::Token<I::Token>>>,
+    {
+        self.then(satisfy_once(f))
+    }
+    #[inline(always)]
+    pub fn satisfy_map<O>(self, f: impl FnOnce(&I::Token) -> Option<O>) -> Cont<'a, 'b, I, O, E, C, S>
+    where
+        E::Message: From<error::Unexpected<error::Token<I::Token>>>,
+    {
+        self.then(satisfy_map_once(f))
+    }
     #[inline(always)]
     pub fn satisfy_cont<O>(
         mut self, f: impl FnOnce(&I::Token, Args<'a, 'b, I, E, C, S>) -> Option<Cont<'a, 'b, I, O, E, C, S>>,
@@ -60,12 +91,26 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
     }
 
     #[inline(always)]
+    pub fn before<P: ParserOnce<I, O, E, C, S>, O>(self, p: P) -> Cont<'a, 'b, I, O, E, C, S>
+    where
+        I: Save,
+        S: Save,
+    {
+        self.then(before(p))
+    }
+
+    #[inline(always)]
     pub fn config<O>(self, f: impl FnOnce(&'a C, Self) -> Cont<'a, 'b, I, O, E, C, S>) -> Cont<'a, 'b, I, O, E, C, S> {
         f(self.config, self)
     }
 }
 
 impl<'a, 'b, I: InputOnce, O, E: ParseError<I>, C, S> Cont<'a, 'b, I, O, E, C, S> {
+    #[inline(always)]
+    pub fn ignore(self) -> Option<Args<'a, 'b, I, E, C, S>> {
+        self.0.map(|x| x.1)
+    }
+
     #[inline(always)]
     pub fn to<O2>(self, value: O2) -> Cont<'a, 'b, I, O2, E, C, S> {
         self.case(|_, k| k.to(value))

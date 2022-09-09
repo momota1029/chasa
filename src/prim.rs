@@ -676,7 +676,31 @@ impl<F: Clone, I, E, C, S> Clone for SatisfyBind<F, I, E, C, S> {
 }
 impl<F: Copy, I, E, C, S> Copy for SatisfyBind<F, I, E, C, S> {}
 #[inline(always)]
-pub fn satisfy_bind<F, I, E, C, S>(f: F) -> SatisfyBind<F, I, E, C, S> {
+pub fn satisfy_bind<
+    I: InputOnce,
+    O,
+    E: ParseError<I>,
+    C,
+    S,
+    F: FnMut(&I::Token) -> Option<Q>,
+    Q: ParserOnce<I, O, E, C, S>,
+>(
+    f: F,
+) -> SatisfyBind<F, I, E, C, S> {
+    SatisfyBind(f, PhantomData)
+}
+#[inline(always)]
+pub fn satisfy_bind_once<
+    I: InputOnce,
+    O,
+    E: ParseError<I>,
+    C,
+    S,
+    F: FnOnce(&I::Token) -> Option<Q>,
+    Q: ParserOnce<I, O, E, C, S>,
+>(
+    f: F,
+) -> SatisfyBind<F, I, E, C, S> {
     SatisfyBind(f, PhantomData)
 }
 impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnOnce(&I::Token) -> Option<Q>, Q: ParserOnce<I, O, E, C, S>>
@@ -722,19 +746,30 @@ impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnMut(&I::Token) -> Option<Q>, 
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct Config<F>(F);
-#[inline(always)]
-pub fn config<F>(f: F) -> Config<F> {
-    Config(f)
+pub struct Config<F, I, E, C, S>(F, PhantomData<fn() -> (I, E, C, S)>);
+impl<F: Clone, I, C, E, S> Clone for Config<F, I, E, C, S> {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), PhantomData)
+    }
 }
-impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnOnce(&C) -> O> ParserOnce<I, O, E, C, S> for Config<F> {
+impl<F: Copy, I, E, C, S> Copy for Config<F, I, E, C, S> {}
+
+#[inline(always)]
+pub fn config_once<I: InputOnce, O, E: ParseError<I>, C, S, F: FnOnce(&C) -> O>(f: F) -> Config<F, I, E, C, S> {
+    Config(f, PhantomData)
+}
+impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnOnce(&C) -> O> ParserOnce<I, O, E, C, S> for Config<F, I, E, C, S> {
     #[inline(always)]
     fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {
         Some(self.0(args.config))
     }
 }
-impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnMut(&C) -> O> Parser<I, O, E, C, S> for Config<F> {
+#[inline(always)]
+pub fn config<I: InputOnce, O, E: ParseError<I>, C, S, F: FnMut(&C) -> O>(f: F) -> Config<F, I, E, C, S> {
+    Config(f, PhantomData)
+}
+impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnMut(&C) -> O> Parser<I, O, E, C, S> for Config<F, I, E, C, S> {
     #[inline(always)]
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
         Some(self.0(args.config))
@@ -742,25 +777,59 @@ impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnMut(&C) -> O> Parser<I, O, E,
 }
 
 #[derive(Clone, Copy)]
-pub struct ConfigBind<F>(F);
+pub struct ConfigCase<F>(F);
 #[inline(always)]
-pub fn config_bind<F>(f: F) -> ConfigBind<F> {
-    ConfigBind(f)
+pub fn config_case_once<
+    I: InputOnce,
+    O,
+    E: ParseError<I>,
+    C,
+    S,
+    F: for<'a, 'b> FnOnce(&'a C, Args<'a, 'b, I, E, C, S>) -> Cont<'a, 'b, I, O, E, C, S>,
+>(
+    f: F,
+) -> ConfigCase<F> {
+    ConfigCase(f)
 }
-impl<I: InputOnce, O, E: ParseError<I>, C, S, P: ParserOnce<I, O, E, C, S>, F: FnOnce(&C) -> P>
-    ParserOnce<I, O, E, C, S> for ConfigBind<F>
+impl<
+        I: InputOnce,
+        O,
+        E: ParseError<I>,
+        C,
+        S,
+        F: for<'a, 'b> FnOnce(&'a C, Args<'a, 'b, I, E, C, S>) -> Cont<'a, 'b, I, O, E, C, S>,
+    > ParserOnce<I, O, E, C, S> for ConfigCase<F>
 {
     #[inline(always)]
     fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {
-        self.0(args.config).run_once(args)
+        Some(self.0(args.config, args).0?.0)
     }
 }
-impl<I: InputOnce, O, E: ParseError<I>, C, S, P: ParserOnce<I, O, E, C, S>, F: FnMut(&C) -> P> Parser<I, O, E, C, S>
-    for ConfigBind<F>
+#[inline(always)]
+pub fn config_case<
+    I: InputOnce,
+    O,
+    E: ParseError<I>,
+    C,
+    S,
+    F: for<'a, 'b> FnMut(&'a C, Args<'a, 'b, I, E, C, S>) -> Cont<'a, 'b, I, O, E, C, S>,
+>(
+    f: F,
+) -> ConfigCase<F> {
+    ConfigCase(f)
+}
+impl<
+        I: InputOnce,
+        O,
+        E: ParseError<I>,
+        C,
+        S,
+        F: for<'a, 'b> FnMut(&'a C, Args<'a, 'b, I, E, C, S>) -> Cont<'a, 'b, I, O, E, C, S>,
+    > Parser<I, O, E, C, S> for ConfigCase<F>
 {
     #[inline(always)]
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
-        self.0(args.config).run_once(args)
+        Some(self.0(args.config, args).0?.0)
     }
 }
 
@@ -808,45 +877,98 @@ impl<I: InputOnce, E: ParseError<I>, C, S> Parser<I, I::Position, E, C, S> for P
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct State<F>(F);
-#[inline(always)]
-pub fn state<F>(f: F) -> State<F> {
-    State(f)
+pub struct State<F, I, E, C, S>(F, PhantomData<fn() -> (I, E, C, S)>);
+impl<F: Clone, I, E, C, S> Clone for State<F, I, E, C, S> {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), PhantomData)
+    }
 }
-impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnOnce(&mut S) -> O> ParserOnce<I, O, E, C, S> for State<F> {
+impl<F: Copy, I, E, C, S> Copy for State<F, I, E, C, S> {}
+#[inline(always)]
+pub fn state<I: InputOnce, O, E: ParseError<I>, C, S, F: FnMut(&mut S) -> O>(f: F) -> State<F, I, E, C, S> {
+    State(f, PhantomData)
+}
+#[inline(always)]
+pub fn state_once<I: InputOnce, O, E: ParseError<I>, C, S, F: FnOnce(&mut S) -> O>(f: F) -> State<F, I, E, C, S> {
+    State(f, PhantomData)
+}
+impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnOnce(&mut S) -> O> ParserOnce<I, O, E, C, S>
+    for State<F, I, E, C, S>
+{
     #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O> {
         Some(self.0(&mut args.state))
     }
 }
-impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnMut(&mut S) -> O> Parser<I, O, E, C, S> for State<F> {
+impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnMut(&mut S) -> O> Parser<I, O, E, C, S> for State<F, I, E, C, S> {
     #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O> {
         Some(self.0(&mut args.state))
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct StateBind<F>(F);
-#[inline(always)]
-pub fn state_bind<F>(f: F) -> StateBind<F> {
-    StateBind(f)
-}
-impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnOnce(&mut S) -> P, P: ParserOnce<I, O, E, C, S>>
-    ParserOnce<I, O, E, C, S> for StateBind<F>
-{
+pub struct StateCase<F, I, E, C, S>(F, PhantomData<fn() -> (I, E, C, S)>);
+impl<F: Clone, I, E, C, S> Clone for StateCase<F, I, E, C, S> {
     #[inline(always)]
-    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O> {
-        self.0(&mut args.state).run_once(args)
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), PhantomData)
     }
 }
-impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnMut(&mut S) -> P, P: ParserOnce<I, O, E, C, S>> Parser<I, O, E, C, S>
-    for StateBind<F>
+impl<F: Copy, I, E, C, S> Copy for StateCase<F, I, E, C, S> {}
+pub fn state_case_once<
+    I: InputOnce,
+    O,
+    E: ParseError<I>,
+    C,
+    S,
+    F: for<'a, 'b> FnOnce(&'a mut S, Args<'a, 'b, I, E, C, ()>) -> Cont<'a, 'b, I, O, E, C, ()>,
+>(
+    f: F,
+) -> StateCase<F, I, E, C, S> {
+    StateCase(f, PhantomData)
+}
+impl<
+        I: InputOnce,
+        O,
+        E: ParseError<I>,
+        C,
+        S,
+        F: for<'a, 'b> FnOnce(&'a mut S, Args<'a, 'b, I, E, C, ()>) -> Cont<'a, 'b, I, O, E, C, ()>,
+    > ParserOnce<I, O, E, C, S> for StateCase<F, I, E, C, S>
 {
     #[inline(always)]
-    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O> {
-        self.0(&mut args.state).run_once(args)
+    fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {
+        let Args { input, config, state, consume, error } = args;
+        Some(self.0(state, Args { input, config, consume, error, state: &mut () }).0?.0)
+    }
+}
+
+pub fn state_case<
+    I: InputOnce,
+    O,
+    E: ParseError<I>,
+    C,
+    S,
+    F: for<'a, 'b> FnMut(&'a mut S, Args<'a, 'b, I, E, C, ()>) -> Cont<'a, 'b, I, O, E, C, ()>,
+>(
+    f: F,
+) -> StateCase<F, I, E, C, S> {
+    StateCase(f, PhantomData)
+}
+impl<
+        I: InputOnce,
+        O,
+        E: ParseError<I>,
+        C,
+        S,
+        F: for<'a, 'b> FnMut(&'a mut S, Args<'a, 'b, I, E, C, ()>) -> Cont<'a, 'b, I, O, E, C, ()>,
+    > Parser<I, O, E, C, S> for StateCase<F, I, E, C, S>
+{
+    #[inline(always)]
+    fn run(&mut self, args: Args<I, E, C, S>) -> Option<O> {
+        let Args { input, config, state, consume, error } = args;
+        Some(self.0(state, Args { input, config, consume, error, state: &mut () }).0?.0)
     }
 }
 

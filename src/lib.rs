@@ -178,15 +178,16 @@ pub mod prelude {
     #[doc(inline)]
     pub use super::fold::{fold, fold1, sep_extend, sep_extend1, sep_fold, sep_fold1, sep_reduce, tail_rec};
     #[doc(inline)]
-    pub use super::input::{pos_str, Input, Seq,Save};
+    pub use super::input::{pos_str, Input, Save, Seq};
     #[doc(inline)]
     pub use super::many::{many, many1, take};
     #[doc(inline)]
     pub use super::parser::{Parser, ParserOnce, Pat};
     #[doc(inline)]
     pub use super::prim::{
-        any, char, config, eoi, local_state, no_state, none_of, one_of, parser, parser_once, pos, pure, satisfy,
-        satisfy_map, satisfy_map_once, satisfy_once, set_config, state, state_bind, str,
+        any, char, config, config_case, config_case_once, config_once, eoi, local_state, no_state, none_of, one_of,
+        parser, parser_once, pos, pure, satisfy, satisfy_map, satisfy_map_once, satisfy_once, set_config, state,
+        state_case, state_case_once, state_once, str,
     };
     pub use super::util::{run, run_once};
 }
