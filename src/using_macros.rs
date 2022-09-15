@@ -18,7 +18,7 @@ assert_eq!(p.parse_ok("abd"), None);
 ```
 */
 #[derive(Clone, Copy)]
-pub struct Chain<PS>(PS);
+pub struct Chain<PS>(pub(crate) PS);
 #[inline(always)]
 pub fn tuple<PS>(parsers: PS) -> Chain<PS> {
     Chain(parsers)

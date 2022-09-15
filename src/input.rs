@@ -1,5 +1,5 @@
 use std::{
-    fmt::{self, Display},
+    fmt::{self, Debug, Display},
     hash::Hash,
 };
 
@@ -40,7 +40,7 @@ impl<T: Clone> Save for T {
     }
 }
 
-pub trait Position {
+pub trait Position: Clone {
     type Offset: Ord;
     fn offset(&self) -> Self::Offset;
 }
@@ -52,10 +52,16 @@ impl<P: Position> Position for &P {
     }
 }
 
+#[derive(PartialEq, Eq)]
 pub struct Ranged<Position, T> {
     pub start: Option<Position>,
     pub end: Position,
     pub item: T,
+}
+impl<Position: Debug, T: Debug> Debug for Ranged<Position, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Ranged").field("start", &self.start).field("end", &self.end).field("item", &self.item).finish()
+    }
 }
 
 pub trait PositionPrinter: Position + Sized {

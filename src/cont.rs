@@ -1,5 +1,5 @@
 use crate::{
-    combi::before,
+    combi::{before, not_followed_by, tuple, Chain},
     error,
     input::{InputOnce, Save},
     prim::{satisfy_map_once, satisfy_once, state_case_once, state_once},
@@ -28,6 +28,19 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
         E::Message: From<M>,
     {
         if self.error.add(None, self.input.position()) {
+            self.error.set(message.into())
+        }
+        Cont(None)
+    }
+
+    #[inline(always)]
+    pub fn fail_with_pos<M, O>(
+        self, start: Option<I::Position>, end: I::Position, message: M,
+    ) -> Cont<'a, 'b, I, O, E, C, S>
+    where
+        E::Message: From<M>,
+    {
+        if self.error.add(start, end) {
             self.error.set(message.into())
         }
         Cont(None)
@@ -91,12 +104,30 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
     }
 
     #[inline(always)]
+    pub fn tuple<PS, O>(self, ps: PS) -> Cont<'a, 'b, I, O, E, C, S>
+    where
+        Chain<PS>: ParserOnce<I, O, E, C, S>,
+    {
+        self.then(tuple(ps))
+    }
+
+    #[inline(always)]
     pub fn before<P: ParserOnce<I, O, E, C, S>, O>(self, p: P) -> Cont<'a, 'b, I, O, E, C, S>
     where
         I: Save,
         S: Save,
     {
         self.then(before(p))
+    }
+
+    #[inline(always)]
+    pub fn not_followed_by<P: ParserOnce<I, O, E, C, S>, O, L>(self, p: P, label: L) -> Cont<'a, 'b, I, (), E, C, S>
+    where
+        E::Message: From<error::Unexpected<error::Format<L>>>,
+        I: Save,
+        S: Save,
+    {
+        self.then(not_followed_by(p, label))
     }
 
     #[inline(always)]

@@ -213,7 +213,10 @@ impl<I, E, C, S> Clone for EoI<I, E, C, S> {
 }
 impl<I, E, C, S> Copy for EoI<I, E, C, S> {}
 #[inline(always)]
-pub fn eoi<I, E, C, S>() -> EoI<I, E, C, S> {
+pub fn eoi<I: InputOnce, E: ParseError<I>, C, S>() -> EoI<I, E, C, S>
+where
+    E::Message: From<Expected<EndOfInput>>,
+{
     EoI(PhantomData)
 }
 impl<I: InputOnce, E: ParseError<I>, C, S> ParserOnce<I, (), E, C, S> for EoI<I, E, C, S>
@@ -305,7 +308,10 @@ impl<Token: Clone, I, E, C, S> Clone for Char<Token, I, E, C, S> {
 }
 impl<Token: Copy, I, E, C, S> Copy for Char<Token, I, E, C, S> {}
 #[inline(always)]
-pub fn char<I: InputOnce, E: ParseError<I>, C, S, Token: PartialEq<I::Token>>(token: Token) -> Char<Token, I, E, C, S> {
+pub fn char<I: InputOnce, E: ParseError<I>, C, S, Token: PartialEq<I::Token>>(token: Token) -> Char<Token, I, E, C, S>
+where
+    E::Message: From<Expected<error::Token<Token>>>,
+{
     Char(token, PhantomData)
 }
 impl<I: InputOnce, E: ParseError<I>, C, S, Token: PartialEq<I::Token> + Clone> ParserOnce<I, I::Token, E, C, S>

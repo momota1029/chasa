@@ -73,6 +73,7 @@ pub trait ParserOnce<
     fn and_then_once<F: FnOnce(O) -> Result<O2, M>, O2, M>(self, f: F) -> AndThen<Self, F, M, O>
     where
         Self: Sized,
+        M: Into<E::Message>,
     {
         AndThen(self, f, PhantomData)
     }
@@ -238,6 +239,7 @@ pub trait Parser<
     fn and_then<F: FnMut(O) -> Result<O2, M>, O2, M>(self, f: F) -> AndThen<Self, F, M, O>
     where
         Self: Sized,
+        M: Into<E::Message>,
     {
         AndThen(self, f, PhantomData)
     }

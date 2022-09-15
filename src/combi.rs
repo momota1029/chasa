@@ -1,6 +1,8 @@
-use std::{borrow::Cow, marker::PhantomData};
+use std::marker::PhantomData;
 
 use either::Either;
+
+use crate::input;
 
 pub use super::using_macros::{chain, choice, skip_chain, tuple, Chain, ChainRight, Choice};
 use super::{
@@ -719,29 +721,29 @@ impl<I: InputOnce, O, E: ParseError<I>, C, S, P: Parser<I, O, E, C, S>> Parser<I
 /// Returns the parser result with the position before and after the parse.
 /// # Example
 /// ```
-/// use chasa::prelude::*;
-/// assert_eq!(char('a').ranged().parse_ok(pos_str("a")), Some(('a',1,2)));
-/// assert_eq!(str("abcd").to(()).ranged().parse_ok(pos_str("abcd")), Some(((),1,5)));
-/// assert_eq!(str("abcd").right(str("efg").to(()).ranged()).parse_ok(pos_str("abcdefg")), Some(((),5,8)))
+/// use chasa::{prelude::*, input::Ranged};
+/// assert_eq!(char('a').ranged().parse_ok(pos_str("a")), Some(Ranged{ start: Some(1), end: 2, item: 'a'}));
+/// assert_eq!(str("abcd").to(()).ranged().parse_ok(pos_str("abcd")), Some(Ranged{ start: Some(1), end: 5, item: ()}));
+/// assert_eq!(str("abcd").right(str("efg").to(()).ranged()).parse_ok(pos_str("abcdefg")), Some(Ranged{ start: Some(5), end: 8, item: ()}))
 /// ```
 #[derive(Clone, Copy)]
 pub struct Ranged<P>(pub(crate) P);
 impl<I: InputOnce, O, E: ParseError<I>, C, S, P: ParserOnce<I, O, E, C, S>>
-    ParserOnce<I, (O, I::Position, I::Position), E, C, S> for Ranged<P>
+    ParserOnce<I, input::Ranged<I::Position, O>, E, C, S> for Ranged<P>
 {
     #[inline(always)]
-    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<(O, I::Position, I::Position)> {
+    fn run_once(self, mut args: Args<I, E, C, S>) -> Option<input::Ranged<I::Position, O>> {
         let pos = args.input.position();
-        self.0.run_once(args.by_ref()).map(|o| (o, pos, args.input.position()))
+        self.0.run_once(args.by_ref()).map(|o| input::Ranged { item: o, start: Some(pos), end: args.input.position() })
     }
 }
 impl<I: InputOnce, O, E: ParseError<I>, C, S, P: Parser<I, O, E, C, S>>
-    Parser<I, (O, I::Position, I::Position), E, C, S> for Ranged<P>
+    Parser<I, input::Ranged<I::Position, O>, E, C, S> for Ranged<P>
 {
     #[inline(always)]
-    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<(O, I::Position, I::Position)> {
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<input::Ranged<I::Position, O>> {
         let pos = args.input.position();
-        self.0.run(args.by_ref()).map(|o| (o, pos, args.input.position()))
+        self.0.run(args.by_ref()).map(|o| input::Ranged { item: o, start: Some(pos), end: args.input.position() })
     }
 }
 
@@ -870,20 +872,23 @@ impl<I: Input, O, E: ParseError<I>, C, S: Save, P: Parser<I, O, E, C, S>> Parser
 /// assert_eq!(not_followed_by(char('b'),"b").and(any).parse_ok("b"), None);
 /// assert_eq!(not_followed_by(char('b').and(char('a')),"b").and(any).parse_ok("bb"), None);
 /// ```
-pub struct NotFollowedBy<P, L, O>(pub(crate) P, pub(crate) L, pub(crate) PhantomData<O>);
-impl<P: Clone, L: Clone, O> Clone for NotFollowedBy<P, L, O> {
+pub struct NotFollowedBy<P, L, I, O, E>(pub(crate) P, pub(crate) L, pub(crate) PhantomData<fn() -> (I, O, E)>);
+impl<P: Clone, L: Clone, I, O, E> Clone for NotFollowedBy<P, L, I, O, E> {
     #[inline(always)]
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone(), PhantomData)
     }
 }
-impl<P: Copy, L: Copy, O> Copy for NotFollowedBy<P, L, O> {}
+impl<P: Copy, L: Copy, I, O, E> Copy for NotFollowedBy<P, L, I, O, E> {}
 #[inline(always)]
-pub fn not_followed_by<P, L: Into<Cow<'static, str>>, O>(parser: P, label: L) -> NotFollowedBy<P, L, O> {
+pub fn not_followed_by<P, L, O, I: Input, E: ParseError<I>>(parser: P, label: L) -> NotFollowedBy<P, L, I, O, E>
+where
+    E::Message: From<error::Unexpected<error::Format<L>>>,
+{
     NotFollowedBy(parser, label, PhantomData)
 }
 impl<I: Input, O, E: ParseError<I>, C, S: Save, P: ParserOnce<I, O, E, C, S>, L> ParserOnce<I, (), E, C, S>
-    for NotFollowedBy<P, L, O>
+    for NotFollowedBy<P, L, I, O, E>
 where
     E::Message: From<error::Unexpected<error::Format<L>>>,
 {
@@ -911,7 +916,7 @@ where
     }
 }
 impl<I: Input, O, E: ParseError<I>, C, S: Save, P: Parser<I, O, E, C, S>, L: Clone> Parser<I, (), E, C, S>
-    for NotFollowedBy<P, L, O>
+    for NotFollowedBy<P, L, I, O, E>
 where
     E::Message: From<error::Unexpected<error::Format<L>>>,
 {
