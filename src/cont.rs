@@ -1,6 +1,6 @@
 use crate::{
     combi::{before, not_followed_by, tuple, Chain},
-    error,
+    error::{self, MessageFrom},
     input::{InputOnce, Save},
     prim::{satisfy_map_once, satisfy_once, state_case_once, state_once},
 };
@@ -25,23 +25,21 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
     #[inline(always)]
     pub fn fail<M, O>(self, message: M) -> Cont<'a, 'b, I, O, E, C, S>
     where
-        E::Message: From<M>,
+        E: MessageFrom<M>,
     {
-        if self.error.add(None, self.input.position()) {
-            self.error.set(message.into())
+        if self.error.add(self.input.position(), self.input.position()) {
+            self.error.set(message)
         }
         Cont(None)
     }
 
     #[inline(always)]
-    pub fn fail_with_pos<M, O>(
-        self, start: Option<I::Position>, end: I::Position, message: M,
-    ) -> Cont<'a, 'b, I, O, E, C, S>
+    pub fn fail_with_pos<M, O>(self, start: I::Position, end: I::Position, message: M) -> Cont<'a, 'b, I, O, E, C, S>
     where
-        E::Message: From<M>,
+        E: MessageFrom<M>,
     {
         if self.error.add(start, end) {
-            self.error.set(message.into())
+            self.error.set(message)
         }
         Cont(None)
     }
@@ -60,14 +58,14 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
     #[inline(always)]
     pub fn satisfy(self, f: impl FnOnce(&I::Token) -> bool) -> Cont<'a, 'b, I, I::Token, E, C, S>
     where
-        E::Message: From<error::Unexpected<error::Token<I::Token>>>,
+        E: MessageFrom<error::Unexpected<error::Token<I::Token>>>,
     {
         self.then(satisfy_once(f))
     }
     #[inline(always)]
     pub fn satisfy_map<O>(self, f: impl FnOnce(&I::Token) -> Option<O>) -> Cont<'a, 'b, I, O, E, C, S>
     where
-        E::Message: From<error::Unexpected<error::Token<I::Token>>>,
+        E: MessageFrom<error::Unexpected<error::Token<I::Token>>>,
     {
         self.then(satisfy_map_once(f))
     }
@@ -76,7 +74,7 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
         mut self, f: impl FnOnce(&I::Token, Args<'a, 'b, I, E, C, S>) -> Option<Cont<'a, 'b, I, O, E, C, S>>,
     ) -> Cont<'a, 'b, I, O, E, C, S>
     where
-        E::Message: From<error::Unexpected<error::Token<I::Token>>>,
+        E: MessageFrom<error::Unexpected<error::Token<I::Token>>>,
     {
         match self.uncons() {
             None => Cont(None),
@@ -88,8 +86,8 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
                     Some(k) => k,
                     None => {
                         let end = input2.position();
-                        if error2.add(Some(start), end) {
-                            error2.set(error::unexpected(error::token(c)).into());
+                        if error2.add(start, end) {
+                            error2.set(error::unexpected(error::token(c)));
                         }
                         Cont(None)
                     },
@@ -123,7 +121,7 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
     #[inline(always)]
     pub fn not_followed_by<P: ParserOnce<I, O, E, C, S>, O, L>(self, p: P, label: L) -> Cont<'a, 'b, I, (), E, C, S>
     where
-        E::Message: From<error::Unexpected<error::Format<L>>>,
+        E: MessageFrom<error::Unexpected<error::Format<L>>>,
         I: Save,
         S: Save,
     {

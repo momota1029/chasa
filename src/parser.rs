@@ -2,6 +2,7 @@ use std::{fmt::Display, fmt::Write, hash::Hash, marker::PhantomData};
 
 use crate::{
     combi::OrWith,
+    error::MessageFrom,
     input::InputOnce,
     many::{ManyBind, SepBind},
 };
@@ -38,15 +39,7 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
     #[inline(always)]
     pub fn uncons(&mut self) -> Option<(I::Token, I::Position)> {
         let pos = self.input.position();
-        match self.input.uncons() {
-            Ok(c) => Some((c, pos)),
-            Err(e) => {
-                if self.error.add(None, pos) {
-                    self.error.set(e.into());
-                }
-                None
-            },
-        }
+        Some((self.input.uncons(self.error)?, pos))
     }
 }
 
@@ -73,7 +66,7 @@ pub trait ParserOnce<
     fn and_then_once<F: FnOnce(O) -> Result<O2, M>, O2, M>(self, f: F) -> AndThen<Self, F, M, O>
     where
         Self: Sized,
-        M: Into<E::Message>,
+        E: MessageFrom<M>,
     {
         AndThen(self, f, PhantomData)
     }
@@ -102,7 +95,7 @@ pub trait ParserOnce<
     fn label<L>(self, label: L) -> Label<Self, L>
     where
         Self: Sized,
-        E::Message: From<error::Expected<error::Format<L>>>,
+        E: MessageFrom<error::Expected<error::Format<L>>>,
     {
         Label(self, label)
     }
@@ -110,7 +103,7 @@ pub trait ParserOnce<
     fn label_with<F: FnMut() -> L, L>(self, label: F) -> LabelWith<Self, F>
     where
         Self: Sized,
-        E::Message: From<error::Expected<error::Format<L>>>,
+        E: MessageFrom<error::Expected<error::Format<L>>>,
     {
         LabelWith(self, label)
     }
@@ -239,7 +232,7 @@ pub trait Parser<
     fn and_then<F: FnMut(O) -> Result<O2, M>, O2, M>(self, f: F) -> AndThen<Self, F, M, O>
     where
         Self: Sized,
-        M: Into<E::Message>,
+        E: MessageFrom<M>,
     {
         AndThen(self, f, PhantomData)
     }

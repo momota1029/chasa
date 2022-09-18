@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 use super::{
     combi::Value,
     error::ParseError,
-    parser::{Parser, ParserOnce,Args},
-    input::{Input,InputOnce,Save},
+    input::{Input, InputOnce, Save},
+    parser::{Args, Parser, ParserOnce},
 };
 
 /**

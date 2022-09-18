@@ -168,7 +168,7 @@ pub mod many;
 pub mod parser;
 pub mod prim;
 mod using_macros;
-mod util;
+pub mod util;
 
 pub mod prelude {
     #[doc(inline)]

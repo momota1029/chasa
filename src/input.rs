@@ -3,14 +3,21 @@ use std::{
     hash::Hash,
 };
 
-use super::error::{unexpected, EndOfInput, Unexpected};
+use crate::{
+    error::MessageFrom,
+    prelude::{unexpected, ParseError},
+};
+
+use super::error::{EndOfInput, Unexpected};
 
 pub trait InputOnce {
     type Token: Clone;
     type Message;
     type Position: Position;
 
-    fn uncons(&mut self) -> Result<Self::Token, Self::Message>;
+    fn uncons<E: ParseError<Self> + MessageFrom<Self::Message>>(&mut self, error: &mut E) -> Option<Self::Token>
+    where
+        Self: Sized;
     fn position(&self) -> Self::Position;
 }
 pub trait Input: InputOnce + Save {}
@@ -54,7 +61,7 @@ impl<P: Position> Position for &P {
 
 #[derive(PartialEq, Eq)]
 pub struct Ranged<Position, T> {
-    pub start: Option<Position>,
+    pub start: Position,
     pub end: Position,
     pub item: T,
 }
@@ -70,14 +77,14 @@ pub trait PositionPrinter: Position + Sized {
 impl<P: PositionPrinter> PositionPrinter for &P {
     fn print<F: Display>(ranged: &Ranged<&Self, F>, f: &mut fmt::Formatter) -> fmt::Result {
         let Ranged { start, end, item } = ranged;
-        P::print(&Ranged { start: start.as_ref().map(|s| **s), end, item }, f)
+        P::print(&Ranged { start, end, item }, f)
     }
 }
 impl<P: PositionPrinter, T: Display> Display for Ranged<P, T> {
     #[inline(always)]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let Ranged { start, end, item } = self;
-        P::print(&Ranged { start: start.as_ref(), end, item }, f)
+        P::print(&Ranged { start, end, item }, f)
     }
 }
 
@@ -87,14 +94,19 @@ impl InputOnce for &str {
     type Position = Self;
 
     #[inline(always)]
-    fn uncons(&mut self) -> Result<char, Unexpected<EndOfInput>> {
+    fn uncons<E: ParseError<Self>>(&mut self, error: &mut E) -> Option<char> {
         let mut chars = self.chars();
         match chars.next() {
             Some(c) => {
                 *self = chars.as_str();
-                Ok(c)
+                Some(c)
             },
-            None => Err(unexpected(EndOfInput)),
+            None => {
+                if error.add(self.position(), self.position()) {
+                    error.set(unexpected(EndOfInput))
+                }
+                None
+            },
         }
     }
 
@@ -137,15 +149,20 @@ impl<'a> InputOnce for PositionString<'a> {
     type Position = usize;
 
     #[inline(always)]
-    fn uncons(&mut self) -> Result<char, Unexpected<EndOfInput>> {
+    fn uncons<E: ParseError<Self>>(&mut self, error: &mut E) -> Option<char> {
         let mut chars = self.str.chars();
         match chars.next() {
             Some(c) => {
                 self.str = chars.as_str();
                 self.pos += 1;
-                Ok(c)
+                Some(c)
             },
-            None => Err(unexpected(EndOfInput)),
+            None => {
+                if error.add(self.position(), self.position()) {
+                    error.set(unexpected(EndOfInput))
+                }
+                None
+            },
         }
     }
     #[inline(always)]
@@ -163,10 +180,8 @@ impl<'a> Position for usize {
 impl<'a> PositionPrinter for usize {
     #[inline(always)]
     fn print<F: Display>(Ranged { start, end, item }: &Ranged<&Self, F>, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(start) = start {
-            if start != end {
-                return write!(f, "{} at {}-{}", item, start, end);
-            }
+        if start != end {
+            return write!(f, "{} at {}-{}", item, start, end);
         }
         write!(f, "{} at {}", item, end)
     }
@@ -195,7 +210,7 @@ impl<'a> InputOnce for LineString<'a> {
     type Position = Self;
 
     #[inline(always)]
-    fn uncons(&mut self) -> Result<char, Unexpected<EndOfInput>> {
+    fn uncons<E: ParseError<Self::Position> + MessageFrom<Self::Message>>(&mut self, error: &mut E) -> Option<char> {
         let mut chars = self.str.chars();
         match chars.next() {
             Some(c) => {
@@ -204,9 +219,14 @@ impl<'a> InputOnce for LineString<'a> {
                     self.line += 1;
                     self.line_start = self.str;
                 }
-                Ok(c)
+                Some(c)
             },
-            None => Err(unexpected(EndOfInput)),
+            None => {
+                if error.add(self.position(), self.position()) {
+                    error.set(unexpected(EndOfInput))
+                }
+                None
+            },
         }
     }
     #[inline(always)]
@@ -225,28 +245,26 @@ impl<'a> Position for LineString<'a> {
 impl<'a> PositionPrinter for LineString<'a> {
     #[inline(always)]
     fn print<F: Display>(Ranged { start, end, item }: &Ranged<&Self, F>, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(start) = start {
-            if start.line != end.line {
-                return write!(
-                    f,
-                    "{} at {}:{}-{}:{}",
-                    item,
-                    start.line + 1,
-                    start.line_start[0..start.str.offset() - start.line_start.offset()].chars().count() + 1,
-                    end.line + 1,
-                    end.line_start[0..end.str.offset() - end.line_start.offset()].chars().count() + 1
-                );
-            }
-            if start.str.offset() != end.str.offset() {
-                return write!(
-                    f,
-                    "{} at {}:{}-{}",
-                    item,
-                    start.line + 1,
-                    start.line_start[0..start.str.offset() - start.line_start.offset()].chars().count() + 1,
-                    end.line_start[0..end.str.offset() - end.line_start.offset()].chars().count() + 1
-                );
-            }
+        if start.line != end.line {
+            return write!(
+                f,
+                "{} at {}:{}-{}:{}",
+                item,
+                start.line + 1,
+                start.line_start[0..start.str.offset() - start.line_start.offset()].chars().count() + 1,
+                end.line + 1,
+                end.line_start[0..end.str.offset() - end.line_start.offset()].chars().count() + 1
+            );
+        }
+        if start.str.offset() != end.str.offset() {
+            return write!(
+                f,
+                "{} at {}:{}-{}",
+                item,
+                start.line + 1,
+                start.line_start[0..start.str.offset() - start.line_start.offset()].chars().count() + 1,
+                end.line_start[0..end.str.offset() - end.line_start.offset()].chars().count() + 1
+            );
         }
         return write!(
             f,

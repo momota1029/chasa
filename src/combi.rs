@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use either::Either;
 
-use crate::input;
+use crate::{error::MessageFrom, input};
 
 pub use super::using_macros::{chain, choice, skip_chain, tuple, Chain, ChainRight, Choice};
 use super::{
@@ -106,7 +106,7 @@ assert_eq!(char('a').label("special a").parse_easy("b"), Err("error: unexpected 
 pub struct Label<P, L>(pub(crate) P, pub(crate) L);
 impl<I: InputOnce, O, E: ParseError<I>, C, S, P: ParserOnce<I, O, E, C, S>, L> ParserOnce<I, O, E, C, S> for Label<P, L>
 where
-    E::Message: From<error::Expected<error::Format<L>>>,
+    E: MessageFrom<error::Expected<error::Format<L>>>,
 {
     #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O> {
@@ -114,7 +114,7 @@ where
             Some(c) => Some(c),
             None => {
                 args.error.clear_expected();
-                args.error.set(error::expected(error::format(self.1)).into());
+                args.error.set(error::expected(error::format(self.1)));
                 None
             },
         }
@@ -122,7 +122,7 @@ where
 }
 impl<I: InputOnce, O, E: ParseError<I>, C, S, P: Parser<I, O, E, C, S>, L: Clone> Parser<I, O, E, C, S> for Label<P, L>
 where
-    E::Message: From<error::Expected<error::Format<L>>>,
+    E: MessageFrom<error::Expected<error::Format<L>>>,
 {
     #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O> {
@@ -130,7 +130,7 @@ where
             Some(c) => Some(c),
             None => {
                 args.error.clear_expected();
-                args.error.set(error::expected(error::format(self.1.clone())).into());
+                args.error.set(error::expected(error::format(self.1.clone())));
                 None
             },
         }
@@ -150,7 +150,7 @@ pub struct LabelWith<P, F>(pub(crate) P, pub(crate) F);
 impl<I: InputOnce, O, E: ParseError<I>, C, S, P: ParserOnce<I, O, E, C, S>, L, F: FnOnce() -> L>
     ParserOnce<I, O, E, C, S> for LabelWith<P, F>
 where
-    E::Message: From<error::Expected<error::Format<L>>>,
+    E: MessageFrom<error::Expected<error::Format<L>>>,
 {
     #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<O> {
@@ -158,7 +158,7 @@ where
             Some(c) => Some(c),
             None => {
                 args.error.clear_expected();
-                args.error.set(error::expected(error::format(self.1())).into());
+                args.error.set(error::expected(error::format(self.1())));
                 None
             },
         }
@@ -167,7 +167,7 @@ where
 impl<I: InputOnce, O, E: ParseError<I>, C, S, P: Parser<I, O, E, C, S>, L, F: FnMut() -> L> Parser<I, O, E, C, S>
     for LabelWith<P, F>
 where
-    E::Message: From<error::Expected<error::Format<L>>>,
+    E: MessageFrom<error::Expected<error::Format<L>>>,
 {
     #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<O> {
@@ -175,7 +175,7 @@ where
             Some(c) => Some(c),
             None => {
                 args.error.clear_expected();
-                args.error.set(error::expected(error::format(self.1())).into());
+                args.error.set(error::expected(error::format(self.1())));
                 None
             },
         }
@@ -423,12 +423,12 @@ impl<
         I: InputOnce,
         O1,
         O2,
-        E: ParseError<I>,
+        E: ParseError<I> + MessageFrom<M>,
         C,
         S,
         P: ParserOnce<I, O1, E, C, S>,
         F: FnOnce(O1) -> Result<O2, M>,
-        M: Into<E::Message>,
+        M,
     > ParserOnce<I, O2, E, C, S> for AndThen<P, F, M, O1>
 {
     #[inline(always)]
@@ -438,8 +438,8 @@ impl<
             Ok(o) => Some(o),
             Err(m) => {
                 let end = args.input.position();
-                if args.error.add(Some(start), end) {
-                    args.error.set(m.into());
+                if args.error.add(start, end) {
+                    args.error.set(m);
                 }
                 None
             },
@@ -450,12 +450,12 @@ impl<
         I: InputOnce,
         O1,
         O2,
-        E: ParseError<I>,
+        E: ParseError<I> + MessageFrom<M>,
         C,
         S,
         P: Parser<I, O1, E, C, S>,
         F: FnMut(O1) -> Result<O2, M>,
-        M: Into<E::Message>,
+        M,
     > Parser<I, O2, E, C, S> for AndThen<P, F, M, O1>
 {
     #[inline(always)]
@@ -465,8 +465,8 @@ impl<
             Ok(o) => Some(o),
             Err(m) => {
                 let end = args.input.position();
-                if args.error.add(Some(start), end) {
-                    args.error.set(m.into());
+                if args.error.add(start, end) {
+                    args.error.set(m);
                 }
                 None
             },
@@ -722,9 +722,9 @@ impl<I: InputOnce, O, E: ParseError<I>, C, S, P: Parser<I, O, E, C, S>> Parser<I
 /// # Example
 /// ```
 /// use chasa::{prelude::*, input::Ranged};
-/// assert_eq!(char('a').ranged().parse_ok(pos_str("a")), Some(Ranged{ start: Some(1), end: 2, item: 'a'}));
-/// assert_eq!(str("abcd").to(()).ranged().parse_ok(pos_str("abcd")), Some(Ranged{ start: Some(1), end: 5, item: ()}));
-/// assert_eq!(str("abcd").right(str("efg").to(()).ranged()).parse_ok(pos_str("abcdefg")), Some(Ranged{ start: Some(5), end: 8, item: ()}))
+/// assert_eq!(char('a').ranged().parse_ok(pos_str("a")), Some(Ranged{ start: 1, end: 2, item: 'a'}));
+/// assert_eq!(str("abcd").to(()).ranged().parse_ok(pos_str("abcd")), Some(Ranged{ start: 1, end: 5, item: ()}));
+/// assert_eq!(str("abcd").right(str("efg").to(()).ranged()).parse_ok(pos_str("abcdefg")), Some(Ranged{ start: 5, end: 8, item: ()}))
 /// ```
 #[derive(Clone, Copy)]
 pub struct Ranged<P>(pub(crate) P);
@@ -734,7 +734,7 @@ impl<I: InputOnce, O, E: ParseError<I>, C, S, P: ParserOnce<I, O, E, C, S>>
     #[inline(always)]
     fn run_once(self, mut args: Args<I, E, C, S>) -> Option<input::Ranged<I::Position, O>> {
         let pos = args.input.position();
-        self.0.run_once(args.by_ref()).map(|o| input::Ranged { item: o, start: Some(pos), end: args.input.position() })
+        self.0.run_once(args.by_ref()).map(|o| input::Ranged { item: o, start: pos, end: args.input.position() })
     }
 }
 impl<I: InputOnce, O, E: ParseError<I>, C, S, P: Parser<I, O, E, C, S>>
@@ -743,7 +743,7 @@ impl<I: InputOnce, O, E: ParseError<I>, C, S, P: Parser<I, O, E, C, S>>
     #[inline(always)]
     fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<input::Ranged<I::Position, O>> {
         let pos = args.input.position();
-        self.0.run(args.by_ref()).map(|o| input::Ranged { item: o, start: Some(pos), end: args.input.position() })
+        self.0.run(args.by_ref()).map(|o| input::Ranged { item: o, start: pos, end: args.input.position() })
     }
 }
 
@@ -814,7 +814,7 @@ impl<'a, I: InputOnce> Iterator for InputIter<'a, I> {
     #[inline(always)]
     fn next(&mut self) -> Option<I::Token> {
         if self.input.position().offset() < self.end {
-            self.input.uncons().ok()
+            self.input.uncons(&mut ())
         } else {
             None
         }
@@ -883,14 +883,14 @@ impl<P: Copy, L: Copy, I, O, E> Copy for NotFollowedBy<P, L, I, O, E> {}
 #[inline(always)]
 pub fn not_followed_by<P, L, O, I: Input, E: ParseError<I>>(parser: P, label: L) -> NotFollowedBy<P, L, I, O, E>
 where
-    E::Message: From<error::Unexpected<error::Format<L>>>,
+    E: MessageFrom<error::Unexpected<error::Format<L>>>,
 {
     NotFollowedBy(parser, label, PhantomData)
 }
 impl<I: Input, O, E: ParseError<I>, C, S: Save, P: ParserOnce<I, O, E, C, S>, L> ParserOnce<I, (), E, C, S>
     for NotFollowedBy<P, L, I, O, E>
 where
-    E::Message: From<error::Unexpected<error::Format<L>>>,
+    E: MessageFrom<error::Unexpected<error::Format<L>>>,
 {
     #[inline(always)]
     fn run_once(self, args: Args<I, E, C, S>) -> Option<()> {
@@ -902,8 +902,8 @@ where
             (None, None) => None,
             (Some(_), _) => {
                 let end = input.position();
-                if error.add(Some(start), end) {
-                    error.set(error::unexpected(error::format(self.1)).into())
+                if error.add(start, end) {
+                    error.set(error::unexpected(error::format(self.1)))
                 }
                 None
             },
@@ -918,7 +918,7 @@ where
 impl<I: Input, O, E: ParseError<I>, C, S: Save, P: Parser<I, O, E, C, S>, L: Clone> Parser<I, (), E, C, S>
     for NotFollowedBy<P, L, I, O, E>
 where
-    E::Message: From<error::Unexpected<error::Format<L>>>,
+    E: MessageFrom<error::Unexpected<error::Format<L>>>,
 {
     #[inline(always)]
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<()> {
@@ -930,8 +930,8 @@ where
             (None, None) => None,
             (Some(_), _) => {
                 let end = input.position();
-                if error.add(Some(start), end) {
-                    error.set(error::unexpected(error::format(self.1.clone())).into())
+                if error.add(start, end) {
+                    error.set(error::unexpected(error::format(self.1.clone())))
                 }
                 None
             },

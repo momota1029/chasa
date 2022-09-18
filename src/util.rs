@@ -173,8 +173,8 @@ impl<T> RangeWithOrd<T> for std::ops::RangeFull {
 }
 
 struct FromFunc<F>(F);
-impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnOnce(Args<I, E, C, S>) -> Option<O>> ParserOnce<I, O, E, C, S>
-    for FromFunc<F>
+impl<I: InputOnce, O, E: ParseError<I>, C, S, F: FnOnce(Args<I, E, C, S>) -> Option<O>>
+    ParserOnce<I, O, E, C, S> for FromFunc<F>
 {
     #[inline(always)]
     fn run_once(self, args: Args<I, E, C, S>) -> Option<O> {

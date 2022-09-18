@@ -1,3 +1,5 @@
+use crate::error::MessageFrom;
+
 use super::{
     error::{self, ParseError},
     input::Save,
@@ -176,9 +178,9 @@ pub fn is_space(c: &char) -> bool {
 #[inline(always)]
 pub fn newline<I: Input, E: ParseError<I>, S: Save, C>() -> impl ParserOnce<I, (), E, C, S>
 where
-    E::Message: From<error::Unexpected<error::Token<char>>>
-        + From<error::Expected<error::Token<char>>>
-        + From<error::Expected<error::Format<&'static str>>>,
+    E: MessageFrom<error::Unexpected<error::Token<char>>>
+        + MessageFrom<error::Expected<error::Token<char>>>
+        + MessageFrom<error::Expected<error::Format<&'static str>>>,
 {
     satisfy_map(get_nl_kind)
         .case(|kind, k| match kind {

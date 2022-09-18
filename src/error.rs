@@ -10,7 +10,7 @@ use std::{
 
 use either::Either;
 
-use super::input::{InputOnce, Position, Ranged};
+use super::input::{InputOnce, Position as Pos, Ranged};
 
 #[derive(Clone, Copy)]
 pub struct Unexpected<T>(T);
@@ -131,29 +131,45 @@ impl<M: Display, E: Display> Display for StdMessage<M, E> {
     }
 }
 
-pub trait ParseError<I: InputOnce> {
-    type Message: From<I::Message> + From<Unexpected<Token<I::Token>>>;
+pub trait ParseError<I: InputOnce>: MessageFrom<Unexpected<Token<I::Token>>> + MessageFrom<I::Message> {
     type Warn;
 
     fn new() -> Self;
-    fn add(&mut self, start: Option<I::Position>, end: I::Position) -> bool;
+    fn add(&mut self, start: I::Position, end: I::Position) -> bool;
 
     fn clear_expected(&mut self);
-    fn set(&mut self, message: Self::Message);
 
-    fn warn(&mut self, start: Option<I::Position>, end: I::Position, warn: Self::Warn);
+    fn warn(&mut self, start: I::Position, end: I::Position, warn: Self::Warn);
 
     fn save(&mut self);
 
     #[inline(always)]
     fn set_unexpected_token(&mut self, token: I::Token) {
-        self.set(Unexpected(Token(token)).into())
+        self.set(Unexpected(Token(token)))
     }
+}
+pub trait MessageFrom<Message> {
+    fn set(&mut self, message: Message);
+}
+
+impl<I: InputOnce> ParseError<I> for () {
+    type Warn = ();
+    fn new() -> Self {
+        ()
+    }
+    fn add(&mut self, _: I::Position, _: I::Position) -> bool {
+        false
+    }
+    fn clear_expected(&mut self) {}
+    fn warn(&mut self, _: I::Position, _: I::Position, _: ()) {}
+    fn save(&mut self) {}
+}
+impl<M> MessageFrom<M> for () {
+    fn set(&mut self, _: M) {}
 }
 
 pub struct StdParseError<Token, Position> {
-    start: Option<Position>,
-    end: Option<Position>,
+    range: Option<(Position, Position)>,
     unexpected: Option<StdToken<Token, Cow<'static, str>>>,
     expected: HashSet<StdToken<Token, Cow<'static, str>>>,
     messages: HashSet<Cow<'static, str>>,
@@ -191,7 +207,7 @@ impl<Token, Position> StdParseError<Token, Position> {
         Token: Display,
     {
         let recovered = self.recovered.iter().map(|Ranged { start, end, item }| Ranged {
-            start: start.as_ref(),
+            start,
             end,
             item: match item {
                 StdRecovered::Trivial { unexpected, expected } => {
@@ -208,10 +224,10 @@ impl<Token, Position> StdParseError<Token, Position> {
                 },
             },
         });
-        match &self.end {
+        match &self.range {
             None => Either::Left(recovered),
-            Some(end) => Either::Right(recovered.chain(iter::once_with(|| Ranged {
-                start: self.start.as_ref(),
+            Some((start, end)) => Either::Right(recovered.chain(iter::once_with(move || Ranged {
+                start,
                 end,
                 item: if self.is_message() {
                     StdParseErrorDisplay::Fail { messages: Either::Right(&self.messages), errors: &self.errors }
@@ -229,41 +245,29 @@ impl<Token, Position> StdParseError<Token, Position> {
 impl<I: InputOnce> ParseError<I> for Option<StdParseError<I::Token, I::Position>>
 where
     I::Token: Hash + Eq,
-    StdParseErrorFor<I::Token>: From<I::Message>,
+    StdParseError<I::Token, I::Position>: MessageFrom<I::Message>,
 {
-    type Message = StdParseErrorFor<I::Token>;
     type Warn = StdMessage<Cow<'static, str>, Box<dyn ErrorTrait>>;
-
     #[inline(always)]
     fn new() -> Self {
         Some(<StdParseError<_, _> as ParseError<I>>::new())
     }
-
     #[inline(always)]
-    fn add(&mut self, start: Option<<I as InputOnce>::Position>, end: <I as InputOnce>::Position) -> bool {
+    fn add(&mut self, start: I::Position, end: I::Position) -> bool {
         if let Some(err) = self {
             <StdParseError<_, _> as ParseError<I>>::add(err, start, end)
         } else {
             false
         }
     }
-
     #[inline(always)]
     fn clear_expected(&mut self) {
         if let Some(err) = self {
             <StdParseError<_, _> as ParseError<I>>::clear_expected(err)
         }
     }
-
     #[inline(always)]
-    fn set(&mut self, messages: Self::Message) {
-        if let Some(err) = self {
-            <StdParseError<_, _> as ParseError<I>>::set(err, messages)
-        }
-    }
-
-    #[inline(always)]
-    fn warn(&mut self, start: Option<<I as InputOnce>::Position>, end: <I as InputOnce>::Position, warn: Self::Warn) {
+    fn warn(&mut self, start: I::Position, end: I::Position, warn: Self::Warn) {
         if let Some(err) = self {
             <StdParseError<_, _> as ParseError<I>>::warn(err, start, end, warn)
         }
@@ -277,19 +281,29 @@ where
     }
 }
 
+impl<Position, Message, Token> MessageFrom<Message> for Option<StdParseError<Token, Position>>
+where
+    Token: Hash + Eq,
+    StdParseError<Token, Position>: MessageFrom<Message>,
+{
+    #[inline(always)]
+    fn set(&mut self, messages: Message) {
+        if let Some(err) = self {
+            err.set(messages)
+        }
+    }
+}
+
 impl<I: InputOnce> ParseError<I> for StdParseError<I::Token, I::Position>
 where
     I::Token: Hash + Eq,
-    StdParseErrorFor<I::Token>: From<I::Message>,
+    Self: MessageFrom<I::Message>,
 {
-    type Message = StdParseErrorFor<I::Token>;
     type Warn = StdMessage<Cow<'static, str>, Box<dyn ErrorTrait>>;
-
     #[inline(always)]
     fn new() -> Self {
         Self {
-            start: None,
-            end: None,
+            range: None,
             unexpected: None,
             expected: HashSet::new(),
             messages: HashSet::new(),
@@ -299,43 +313,30 @@ where
     }
 
     #[inline(always)]
-    fn add(&mut self, start: Option<I::Position>, end: I::Position) -> bool {
-        match &self.end {
+    fn add(&mut self, start: I::Position, end: I::Position) -> bool {
+        match &self.range {
             None => {
-                self.start = start;
-                self.end = Some(end);
+                self.range = Some((start, end));
                 true
             },
-            Some(old_end) => match old_end.offset().cmp(&end.offset()) {
+            Some((old_start, old_end)) => match old_end.offset().cmp(&end.offset()) {
                 Greater => false,
                 Less => {
-                    self.start = start;
-                    self.end = Some(end);
+                    self.range = Some((start, end));
                     self.unexpected = None;
                     self.expected.clear();
                     self.messages.clear();
                     true
                 },
-                Equal => match (&self.start, start) {
-                    (None, None) => true,
-                    (Some(_), None) => false,
-                    (None, Some(start)) => {
-                        self.start = Some(start);
+                Equal => match old_start.offset().cmp(&start.offset()) {
+                    Greater => false,
+                    Equal => true,
+                    Less => {
+                        self.range = Some((start, end));
                         self.unexpected = None;
                         self.expected.clear();
                         self.messages.clear();
                         true
-                    },
-                    (Some(old_start), Some(start)) => match old_start.offset().cmp(&start.offset()) {
-                        Greater => false,
-                        Equal => true,
-                        Less => {
-                            self.start = Some(start);
-                            self.unexpected = None;
-                            self.expected.clear();
-                            self.messages.clear();
-                            true
-                        },
                     },
                 },
             },
@@ -348,8 +349,46 @@ where
     }
 
     #[inline(always)]
-    fn set(&mut self, message: Self::Message) {
-        match message {
+    fn warn(&mut self, start: I::Position, end: I::Position, warn: Self::Warn) {
+        self.recovered.push(Ranged { start, end, item: StdRecovered::Warn { message: warn } })
+    }
+
+    #[inline(always)]
+    fn save(&mut self) {
+        match self.range.take() {
+            None => (),
+            Some((start, end)) => {
+                if self.messages.is_empty() {
+                    self.recovered.push(Ranged {
+                        start,
+                        end,
+                        item: StdRecovered::Trivial {
+                            unexpected: self.unexpected.take(),
+                            expected: self.expected.drain().collect(),
+                        },
+                    });
+                } else {
+                    self.recovered.push(Ranged {
+                        start,
+                        end,
+                        item: StdRecovered::Fail {
+                            messages: self.messages.drain().collect(),
+                            errors: self.errors.drain(..).collect(),
+                        },
+                    })
+                }
+            },
+        }
+    }
+}
+impl<Token, Message, Position> MessageFrom<Message> for StdParseError<Token, Position>
+where
+    Message: Into<StdParseErrorFor<Token>>,
+    Token: Hash + Eq,
+{
+    #[inline(always)]
+    fn set(&mut self, message: Message) {
+        match message.into() {
             StdErrorMessage::Unexpected(unexpected) => {
                 if !self.is_message() {
                     self.unexpected = Some(unexpected);
@@ -369,39 +408,6 @@ where
                 self.unexpected = None;
                 self.expected.clear();
                 self.errors.push(err);
-            },
-        }
-    }
-
-    #[inline(always)]
-    fn warn(&mut self, start: Option<I::Position>, end: I::Position, warn: Self::Warn) {
-        self.recovered.push(Ranged { start, end, item: StdRecovered::Warn { message: warn } })
-    }
-
-    #[inline(always)]
-    fn save(&mut self) {
-        match self.end.take() {
-            None => (),
-            Some(end) => {
-                if self.messages.is_empty() {
-                    self.recovered.push(Ranged {
-                        start: self.start.take(),
-                        end,
-                        item: StdRecovered::Trivial {
-                            unexpected: self.unexpected.take(),
-                            expected: self.expected.drain().collect(),
-                        },
-                    });
-                } else {
-                    self.recovered.push(Ranged {
-                        start: self.start.take(),
-                        end,
-                        item: StdRecovered::Fail {
-                            messages: self.messages.drain().collect(),
-                            errors: self.errors.drain(..).collect(),
-                        },
-                    })
-                }
             },
         }
     }
