@@ -3,10 +3,7 @@ use std::{
     hash::Hash,
 };
 
-use crate::{
-    error::MessageFrom,
-    prelude::{unexpected, ParseError},
-};
+use crate::prelude::unexpected;
 
 use super::error::{EndOfInput, Unexpected};
 
@@ -15,9 +12,7 @@ pub trait InputOnce {
     type Message;
     type Position: Position;
 
-    fn uncons<E: ParseError<Self> + MessageFrom<Self::Message>>(&mut self, error: &mut E) -> Option<Self::Token>
-    where
-        Self: Sized;
+    fn uncons(&mut self) -> Result<Self::Token, Self::Message>;
     fn position(&self) -> Self::Position;
 }
 pub trait Input: InputOnce + Save {}
@@ -31,7 +26,7 @@ where
 impl<I: Input<Message = Unexpected<EndOfInput>> + Save> Seq for I where I::Token: Hash + Eq {}
 
 pub trait Save {
-    type Savepoint;
+    type Savepoint: Clone;
     fn save(&mut self) -> Self::Savepoint;
     fn load(&mut self, savepoint: Self::Savepoint);
 }
@@ -94,19 +89,14 @@ impl InputOnce for &str {
     type Position = Self;
 
     #[inline(always)]
-    fn uncons<E: ParseError<Self>>(&mut self, error: &mut E) -> Option<char> {
+    fn uncons(&mut self) -> Result<char, Self::Message> {
         let mut chars = self.chars();
         match chars.next() {
             Some(c) => {
                 *self = chars.as_str();
-                Some(c)
+                Ok(c)
             },
-            None => {
-                if error.add(self.position(), self.position()) {
-                    error.set(unexpected(EndOfInput))
-                }
-                None
-            },
+            None => Err(unexpected(EndOfInput)),
         }
     }
 
@@ -149,20 +139,15 @@ impl<'a> InputOnce for PositionString<'a> {
     type Position = usize;
 
     #[inline(always)]
-    fn uncons<E: ParseError<Self>>(&mut self, error: &mut E) -> Option<char> {
+    fn uncons(&mut self) -> Result<char, Self::Message> {
         let mut chars = self.str.chars();
         match chars.next() {
             Some(c) => {
                 self.str = chars.as_str();
                 self.pos += 1;
-                Some(c)
+                Ok(c)
             },
-            None => {
-                if error.add(self.position(), self.position()) {
-                    error.set(unexpected(EndOfInput))
-                }
-                None
-            },
+            None => Err(unexpected(EndOfInput)),
         }
     }
     #[inline(always)]
@@ -210,7 +195,7 @@ impl<'a> InputOnce for LineString<'a> {
     type Position = Self;
 
     #[inline(always)]
-    fn uncons<E: ParseError<Self::Position> + MessageFrom<Self::Message>>(&mut self, error: &mut E) -> Option<char> {
+    fn uncons(&mut self) -> Result<char, Self::Message> {
         let mut chars = self.str.chars();
         match chars.next() {
             Some(c) => {
@@ -219,14 +204,9 @@ impl<'a> InputOnce for LineString<'a> {
                     self.line += 1;
                     self.line_start = self.str;
                 }
-                Some(c)
+                Ok(c)
             },
-            None => {
-                if error.add(self.position(), self.position()) {
-                    error.set(unexpected(EndOfInput))
-                }
-                None
-            },
+            None => Err(unexpected(EndOfInput)),
         }
     }
     #[inline(always)]

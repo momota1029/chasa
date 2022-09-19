@@ -814,7 +814,7 @@ impl<'a, I: InputOnce> Iterator for InputIter<'a, I> {
     #[inline(always)]
     fn next(&mut self) -> Option<I::Token> {
         if self.input.position().offset() < self.end {
-            self.input.uncons(&mut ())
+            self.input.uncons().ok()
         } else {
             None
         }

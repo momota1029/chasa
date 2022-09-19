@@ -39,7 +39,15 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
     #[inline(always)]
     pub fn uncons(&mut self) -> Option<(I::Token, I::Position)> {
         let pos = self.input.position();
-        Some((self.input.uncons(self.error)?, pos))
+        match self.input.uncons() {
+            Ok(c) => Some((c, pos)),
+            Err(e) => {
+                if self.error.add(pos.clone(), pos) {
+                    self.error.set(e)
+                }
+                None
+            },
+        }
     }
 }
 

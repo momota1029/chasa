@@ -230,9 +230,9 @@ impl<I: InputOnce, E: ParseError<I> + MessageFrom<Expected<EndOfInput>>, C, S> P
     #[inline(always)]
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<()> {
         let pos = args.input.position();
-        match args.input.uncons(&mut ()) {
-            None => Some(()),
-            Some(token) => {
+        match args.input.uncons() {
+            Err(_) => Some(()),
+            Ok(token) => {
                 if args.error.add(pos.clone(), pos) {
                     args.error.set_unexpected_token(token);
                     args.error.set(expected(EndOfInput));
@@ -270,8 +270,8 @@ impl<I: InputOnce, E: ParseError<I>, C, S> ParserOnce<I, I::Token, E, C, S> for 
 }
 impl<I: InputOnce, E: ParseError<I>, C, S> Parser<I, I::Token, E, C, S> for Any<I, E, C, S> {
     #[inline(always)]
-    fn run(&mut self, args: Args<I, E, C, S>) -> Option<I::Token> {
-        let token = args.input.uncons(args.error)?;
+    fn run(&mut self, mut args: Args<I, E, C, S>) -> Option<I::Token> {
+        let (token, _) = args.uncons()?;
         args.consume.drop();
         Some(token)
     }
