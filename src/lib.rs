@@ -185,9 +185,8 @@ pub mod prelude {
     pub use super::parser::{Parser, ParserOnce, Pat};
     #[doc(inline)]
     pub use super::prim::{
-        any, char, config, config_case, config_case_once, config_once, eoi, local_state, no_state, none_of, one_of,
-        parser, parser_once, pos, pure, satisfy, satisfy_map, satisfy_map_once, satisfy_once, set_config, state,
-        state_case, state_case_once, state_once, str,
+        any, char, config, config_case, config_case_once, config_once, eoi, local_state, no_state, none_of, one_of, parser, parser_once, pos, pure, satisfy, satisfy_map, satisfy_map_once, satisfy_once, set_config, state, state_case,
+        state_case_once, state_once, str,
     };
     pub use super::util::{run, run_once};
 }

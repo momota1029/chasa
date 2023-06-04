@@ -8,15 +8,10 @@ use crate::{
 };
 
 use super::{
-    combi::{
-        And, AndThen, Between, Bind, Case, Cut, GetString, GetStringExtend, Label, LabelWith, Left, Map, Or, OrNot,
-        Ranged, Right, Value,
-    },
+    combi::{And, AndThen, Between, Bind, Case, Cut, GetString, GetStringExtend, Label, LabelWith, Left, Map, Or, OrNot, Ranged, Right, Value},
     cont::Cont,
     error::{self, ParseError, StdParseError, StdParseErrorFor},
-    fold::{
-        fold, fold1, Extend1Parser, ExtendParser, Fold, Fold1, SepExtend, SepExtend1, SepFold, SepFold1, SepReduce,
-    },
+    fold::{fold, fold1, Extend1Parser, ExtendParser, Fold, Fold1, SepExtend, SepExtend1, SepFold, SepFold1, SepReduce},
     input::{PositionPrinter, Save},
     many::{many, many1, take, Many, Many1, ManyIterator, ManyMap, Repeat, Sep, Sep1, SepIterator, SepMap},
     prim::MutParser,
@@ -46,25 +41,16 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
                     self.error.set(e)
                 }
                 None
-            },
+            }
         }
     }
 }
 
-pub trait ParserOnce<
-    I: InputOnce,
-    O,
-    E: ParseError<I> = Option<StdParseError<<I as InputOnce>::Token, <I as InputOnce>::Position>>,
-    C = (),
-    S = (),
->
-{
+pub trait ParserOnce<I: InputOnce, O, E: ParseError<I> = Option<StdParseError<<I as InputOnce>::Token, <I as InputOnce>::Position>>, C = (), S = ()> {
     fn run_once(self, args: Args<I, E, C, S>) -> Option<O>;
 
     #[inline(always)]
-    fn case_once<F: for<'a, 'b> FnOnce(O, Args<'a, 'b, I, E, C, S>) -> Cont<'a, 'b, I, O2, E, C, S>, O2>(
-        self, f: F,
-    ) -> Case<Self, F, O, E>
+    fn case_once<F: for<'a, 'b> FnOnce(O, Args<'a, 'b, I, E, C, S>) -> Cont<'a, 'b, I, O2, E, C, S>, O2>(self, f: F) -> Case<Self, F, O, E>
     where
         Self: Sized,
     {
@@ -144,9 +130,7 @@ pub trait ParserOnce<
         OrWith(self, resource, f)
     }
     #[inline(always)]
-    fn between<P1: ParserOnce<I, Output1, E, C, S>, P2: ParserOnce<I, Output2, E, C, S>, Output1, Output2>(
-        self, left: P1, right: P2,
-    ) -> Between<P1, Self, P2, Output1, Output2>
+    fn between<P1: ParserOnce<I, Output1, E, C, S>, P2: ParserOnce<I, Output2, E, C, S>, Output1, Output2>(self, left: P1, right: P2) -> Between<P1, Self, P2, Output1, Output2>
     where
         Self: Sized,
     {
@@ -203,14 +187,7 @@ pub trait ParserOnce<
     }
 }
 
-pub trait Parser<
-    I: InputOnce,
-    O,
-    E: ParseError<I> = Option<StdParseError<<I as InputOnce>::Token, <I as InputOnce>::Position>>,
-    C = (),
-    S = (),
->: ParserOnce<I, O, E, C, S>
-{
+pub trait Parser<I: InputOnce, O, E: ParseError<I> = Option<StdParseError<<I as InputOnce>::Token, <I as InputOnce>::Position>>, C = (), S = ()>: ParserOnce<I, O, E, C, S> {
     fn run(&mut self, args: Args<I, E, C, S>) -> Option<O>;
 
     #[inline(always)]
@@ -228,9 +205,7 @@ pub trait Parser<
         OrWith(self, resource, f)
     }
     #[inline(always)]
-    fn case<F: for<'a, 'b> FnMut(O, Args<'a, 'b, I, E, C, S>) -> Cont<'a, 'b, I, O2, E, C, S>, O2>(
-        self, f: F,
-    ) -> Case<Self, F, O, E>
+    fn case<F: for<'a, 'b> FnMut(O, Args<'a, 'b, I, E, C, S>) -> Cont<'a, 'b, I, O2, E, C, S>, O2>(self, f: F) -> Case<Self, F, O, E>
     where
         Self: Sized,
     {
@@ -273,31 +248,42 @@ pub trait Parser<
         fold1(init, self, f)
     }
     #[inline(always)]
-    fn sep_fold<T, F: FnMut(T, O) -> T, P: Parser<I, U, E, C, S>, U>(
-        self, init: T, sep: P, f: F,
-    ) -> SepFold<T, Self, P, F, O, U>
+    fn sep_fold<T, F: FnMut(T, O) -> T, P: Parser<I, U, E, C, S>, U>(self, init: T, sep: P, f: F) -> SepFold<T, Self, P, F, O, U>
     where
         Self: Sized,
     {
-        SepFold { init, p: self, sep, succ: f, _marker: PhantomData }
+        SepFold {
+            init,
+            p: self,
+            sep,
+            succ: f,
+            _marker: PhantomData,
+        }
     }
     #[inline(always)]
-    fn sep_reduce<T, F: FnMut(O, T, O) -> O, P: Parser<I, T, E, C, S>, U>(
-        self, sep: P, f: F,
-    ) -> SepReduce<Self, P, F, U>
+    fn sep_reduce<T, F: FnMut(O, T, O) -> O, P: Parser<I, T, E, C, S>, U>(self, sep: P, f: F) -> SepReduce<Self, P, F, U>
     where
         Self: Sized,
     {
-        SepReduce { item: self, sep, accum: f, _marker: PhantomData }
+        SepReduce {
+            item: self,
+            sep,
+            accum: f,
+            _marker: PhantomData,
+        }
     }
     #[inline(always)]
-    fn sep_fold1<T, F: FnMut(T, O) -> T, P: Parser<I, U, E, C, S>, U>(
-        self, init: T, sep: P, f: F,
-    ) -> SepFold1<T, Self, P, F, O, U>
+    fn sep_fold1<T, F: FnMut(T, O) -> T, P: Parser<I, U, E, C, S>, U>(self, init: T, sep: P, f: F) -> SepFold1<T, Self, P, F, O, U>
     where
         Self: Sized,
     {
-        SepFold1 { init, p: self, sep, succ: f, _marker: PhantomData }
+        SepFold1 {
+            init,
+            p: self,
+            sep,
+            succ: f,
+            _marker: PhantomData,
+        }
     }
     #[inline(always)]
     fn extend<T>(self, value: T) -> ExtendParser<T, Self, O>
@@ -378,18 +364,14 @@ pub trait Parser<
         ManyMap(self, f, PhantomData)
     }
     #[inline]
-    fn many_bind<O2, P: ParserOnce<I, O2, E, C, S>, F: FnMut(ManyIterator<Self, I, O, E, C, S>) -> P>(
-        self, f: F,
-    ) -> ManyBind<Self, F, O>
+    fn many_bind<O2, P: ParserOnce<I, O2, E, C, S>, F: FnMut(ManyIterator<Self, I, O, E, C, S>) -> P>(self, f: F) -> ManyBind<Self, F, O>
     where
         Self: Sized,
     {
         ManyBind(self, f, PhantomData)
     }
     #[inline]
-    fn many_bind_once<O2, P: ParserOnce<I, O2, E, C, S>, F: FnOnce(ManyIterator<Self, I, O, E, C, S>) -> P>(
-        self, f: F,
-    ) -> ManyBind<Self, F, O>
+    fn many_bind_once<O2, P: ParserOnce<I, O2, E, C, S>, F: FnOnce(ManyIterator<Self, I, O, E, C, S>) -> P>(self, f: F) -> ManyBind<Self, F, O>
     where
         Self: Sized,
     {
@@ -410,48 +392,28 @@ pub trait Parser<
         Sep1(self, sep, PhantomData)
     }
     #[inline]
-    fn sep_map<T, F: FnMut(SepIterator<Self, P, I, O, U, E, C, S>) -> T, P: Parser<I, U, E, C, S>, U>(
-        self, sep: P, f: F,
-    ) -> SepMap<Self, P, F, O, U>
+    fn sep_map<T, F: FnMut(SepIterator<Self, P, I, O, U, E, C, S>) -> T, P: Parser<I, U, E, C, S>, U>(self, sep: P, f: F) -> SepMap<Self, P, F, O, U>
     where
         Self: Sized,
     {
         SepMap(self, sep, f, PhantomData)
     }
     #[inline]
-    fn sep_map_once<T, F: FnOnce(SepIterator<Self, P, I, O, U, E, C, S>) -> T, P: Parser<I, U, E, C, S>, U>(
-        self, sep: P, f: F,
-    ) -> SepMap<Self, P, F, O, U>
+    fn sep_map_once<T, F: FnOnce(SepIterator<Self, P, I, O, U, E, C, S>) -> T, P: Parser<I, U, E, C, S>, U>(self, sep: P, f: F) -> SepMap<Self, P, F, O, U>
     where
         Self: Sized,
     {
         SepMap(self, sep, f, PhantomData)
     }
     #[inline]
-    fn sep_bind<
-        O2,
-        F: FnMut(SepIterator<Self, P, I, O, T, E, C, S>) -> Q,
-        P: Parser<I, T, E, C, S>,
-        T,
-        Q: ParserOnce<I, O2, E, C, S>,
-    >(
-        self, sep: P, f: F,
-    ) -> SepBind<Self, P, F, O, T>
+    fn sep_bind<O2, F: FnMut(SepIterator<Self, P, I, O, T, E, C, S>) -> Q, P: Parser<I, T, E, C, S>, T, Q: ParserOnce<I, O2, E, C, S>>(self, sep: P, f: F) -> SepBind<Self, P, F, O, T>
     where
         Self: Sized,
     {
         SepBind(self, sep, f, PhantomData)
     }
     #[inline]
-    fn sep_bind_once<
-        O2,
-        F: FnOnce(SepIterator<Self, P, I, O, T, E, C, S>) -> Q,
-        P: Parser<I, T, E, C, S>,
-        T,
-        Q: ParserOnce<I, O2, E, C, S>,
-    >(
-        self, sep: P, f: F,
-    ) -> SepBind<Self, P, F, O, T>
+    fn sep_bind_once<O2, F: FnOnce(SepIterator<Self, P, I, O, T, E, C, S>) -> Q, P: Parser<I, T, E, C, S>, T, Q: ParserOnce<I, O2, E, C, S>>(self, sep: P, f: F) -> SepBind<Self, P, F, O, T>
     where
         Self: Sized,
     {
@@ -519,14 +481,12 @@ where
                     }
                 }
                 Err(str)
-            },
+            }
         }
     }
 
     #[inline(always)]
-    fn parse(
-        self, input: &mut I,
-    ) -> Result<O, Option<StdParseError<<I as InputOnce>::Token, <I as InputOnce>::Position>>>
+    fn parse(self, input: &mut I) -> Result<O, Option<StdParseError<<I as InputOnce>::Token, <I as InputOnce>::Position>>>
     where
         Self: Sized,
     {

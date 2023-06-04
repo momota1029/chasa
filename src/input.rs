@@ -62,11 +62,7 @@ pub struct Ranged<Position, T> {
 }
 impl<Position: Debug, T: Debug> Debug for Ranged<Position, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Ranged")
-            .field("start", &self.start)
-            .field("end", &self.end)
-            .field("item", &self.item)
-            .finish()
+        f.debug_struct("Ranged").field("start", &self.start).field("end", &self.end).field("item", &self.item).finish()
     }
 }
 
@@ -119,14 +115,7 @@ impl Position for &str {
 }
 impl PositionPrinter for &str {
     #[inline(always)]
-    fn print<F: Display>(
-        Ranged {
-            start: _,
-            end: _,
-            item,
-        }: &Ranged<&Self, F>,
-        f: &mut fmt::Formatter,
-    ) -> fmt::Result {
+    fn print<F: Display>(Ranged { start: _, end: _, item }: &Ranged<&Self, F>, f: &mut fmt::Formatter) -> fmt::Result {
         item.fmt(f)
     }
 }
@@ -175,10 +164,7 @@ impl<'a> Position for usize {
 }
 impl<'a> PositionPrinter for usize {
     #[inline(always)]
-    fn print<F: Display>(
-        Ranged { start, end, item }: &Ranged<&Self, F>,
-        f: &mut fmt::Formatter,
-    ) -> fmt::Result {
+    fn print<F: Display>(Ranged { start, end, item }: &Ranged<&Self, F>, f: &mut fmt::Formatter) -> fmt::Result {
         if start != end {
             return write!(f, "{} at {}-{}", item, start, end);
         }
@@ -194,19 +180,12 @@ pub struct LineString<'a> {
 }
 impl<'a> LineString<'a> {
     pub fn new(str: &'a str) -> Self {
-        LineString {
-            line_start: str,
-            line: 0,
-            str,
-        }
+        LineString { line_start: str, line: 0, str }
     }
 }
 impl<'a> Into<usize> for LineString<'a> {
     fn into(self) -> usize {
-        self.line_start[0..self.str.offset() - self.line_start.offset()]
-            .chars()
-            .count()
-            + 1
+        self.line_start[0..self.str.offset() - self.line_start.offset()].chars().count() + 1
     }
 }
 
@@ -245,25 +224,16 @@ impl<'a> Position for LineString<'a> {
 }
 impl<'a> PositionPrinter for LineString<'a> {
     #[inline(always)]
-    fn print<F: Display>(
-        Ranged { start, end, item }: &Ranged<&Self, F>,
-        f: &mut fmt::Formatter,
-    ) -> fmt::Result {
+    fn print<F: Display>(Ranged { start, end, item }: &Ranged<&Self, F>, f: &mut fmt::Formatter) -> fmt::Result {
         if start.line != end.line {
             return write!(
                 f,
                 "{} at {}:{}-{}:{}",
                 item,
                 start.line + 1,
-                start.line_start[0..start.str.offset() - start.line_start.offset()]
-                    .chars()
-                    .count()
-                    + 1,
+                start.line_start[0..start.str.offset() - start.line_start.offset()].chars().count() + 1,
                 end.line + 1,
-                end.line_start[0..end.str.offset() - end.line_start.offset()]
-                    .chars()
-                    .count()
-                    + 1
+                end.line_start[0..end.str.offset() - end.line_start.offset()].chars().count() + 1
             );
         }
         if start.str.offset() != end.str.offset() {
@@ -272,25 +242,10 @@ impl<'a> PositionPrinter for LineString<'a> {
                 "{} at {}:{}-{}",
                 item,
                 start.line + 1,
-                start.line_start[0..start.str.offset() - start.line_start.offset()]
-                    .chars()
-                    .count()
-                    + 1,
-                end.line_start[0..end.str.offset() - end.line_start.offset()]
-                    .chars()
-                    .count()
-                    + 1
+                start.line_start[0..start.str.offset() - start.line_start.offset()].chars().count() + 1,
+                end.line_start[0..end.str.offset() - end.line_start.offset()].chars().count() + 1
             );
         }
-        return write!(
-            f,
-            "{} at {}:{}",
-            item,
-            end.line + 1,
-            end.line_start[0..end.str.offset() - end.line_start.offset()]
-                .chars()
-                .count()
-                + 1,
-        );
+        return write!(f, "{} at {}:{}", item, end.line + 1, end.line_start[0..end.str.offset() - end.line_start.offset()].chars().count() + 1,);
     }
 }

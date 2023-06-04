@@ -8,15 +8,10 @@ use super::{
 };
 
 pub mod prelude {
-    pub use super::{
-        ascii, ascii_latin, ascii_latin_num, ascii_num, newline, no_break, no_break_ws, no_break_ws1, space, ws, ws1,
-        Input, InputOnce, Seq,
-    };
+    pub use super::{ascii, ascii_latin, ascii_latin_num, ascii_num, newline, no_break, no_break_ws, no_break_ws1, space, ws, ws1, Input, InputOnce, Seq};
 
     #[doc(inline)]
-    pub use super::super::combi::{
-        before, chain, choice, extend_with_str, not_followed_by, pure_or, skip_chain, tuple,
-    };
+    pub use super::super::combi::{before, chain, choice, extend_with_str, not_followed_by, pure_or, skip_chain, tuple};
     #[doc(inline)]
     pub use super::super::error::{expected, format, from_error, message, token, unexpected, ParseError};
     #[doc(inline)]
@@ -29,9 +24,8 @@ pub mod prelude {
     pub use super::super::parser::{Parser, ParserOnce, Pat};
     #[doc(inline)]
     pub use super::super::prim::{
-        any, char, config, config_case, config_case_once, config_once, eoi, local_state, no_state, none_of, one_of,
-        parser, parser_once, pos, pure, satisfy, satisfy_bind, satisfy_bind_once, satisfy_map, satisfy_map_once,
-        satisfy_once, set_config, state, state_case, state_case_once, state_once, str,
+        any, char, config, config_case, config_case_once, config_once, eoi, local_state, no_state, none_of, one_of, parser, parser_once, pos, pure, satisfy, satisfy_bind, satisfy_bind_once, satisfy_map, satisfy_map_once, satisfy_once,
+        set_config, state, state_case, state_case_once, state_once, str,
     };
     pub use super::super::util::{run, run_once};
 }
@@ -103,7 +97,7 @@ pub fn get_nl_kind(c: &char) -> Option<NLKind> {
                     } else {
                         None?
                     }
-                },
+                }
             },
         },
     })
@@ -136,7 +130,7 @@ pub fn get_sp_kind(c: &char) -> Option<SpaceKind> {
                 } else {
                     None?
                 }
-            },
+            }
         },
         Greater => match c.cmp(&'\u{2002}') {
             Equal => SpaceKind::Other(*c),
@@ -155,7 +149,7 @@ pub fn get_sp_kind(c: &char) -> Option<SpaceKind> {
                         } else {
                             None?
                         }
-                    },
+                    }
                 },
                 Greater => {
                     if c == &'\u{feff}' {
@@ -163,7 +157,7 @@ pub fn get_sp_kind(c: &char) -> Option<SpaceKind> {
                     } else {
                         None?
                     }
-                },
+                }
             },
         },
     })
@@ -178,9 +172,7 @@ pub fn is_space(c: &char) -> bool {
 #[inline(always)]
 pub fn newline<I: Input, E: ParseError<I>, S: Save, C>() -> impl ParserOnce<I, (), E, C, S>
 where
-    E: MessageFrom<error::Unexpected<error::Token<char>>>
-        + MessageFrom<error::Expected<error::Token<char>>>
-        + MessageFrom<error::Expected<error::Format<&'static str>>>,
+    E: MessageFrom<error::Unexpected<error::Token<char>>> + MessageFrom<error::Expected<error::Token<char>>> + MessageFrom<error::Expected<error::Format<&'static str>>>,
 {
     satisfy_map(get_nl_kind)
         .case(|kind, k| match kind {

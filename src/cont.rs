@@ -49,9 +49,7 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
         self.then(state_once(f))
     }
     #[inline(always)]
-    pub fn state_case<O>(
-        self, f: impl for<'c, 'd> FnOnce(&'c mut S, Args<'c, 'd, I, E, C, ()>) -> Cont<'c, 'd, I, O, E, C, ()>,
-    ) -> Cont<'a, 'b, I, O, E, C, S> {
+    pub fn state_case<O>(self, f: impl for<'c, 'd> FnOnce(&'c mut S, Args<'c, 'd, I, E, C, ()>) -> Cont<'c, 'd, I, O, E, C, ()>) -> Cont<'a, 'b, I, O, E, C, S> {
         self.then(state_case_once(f))
     }
 
@@ -70,9 +68,7 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
         self.then(satisfy_map_once(f))
     }
     #[inline(always)]
-    pub fn satisfy_cont<O>(
-        mut self, f: impl FnOnce(&I::Token, Args<'a, 'b, I, E, C, S>) -> Option<Cont<'a, 'b, I, O, E, C, S>>,
-    ) -> Cont<'a, 'b, I, O, E, C, S>
+    pub fn satisfy_cont<O>(mut self, f: impl FnOnce(&I::Token, Args<'a, 'b, I, E, C, S>) -> Option<Cont<'a, 'b, I, O, E, C, S>>) -> Cont<'a, 'b, I, O, E, C, S>
     where
         E: MessageFrom<error::Unexpected<error::Token<I::Token>>>,
     {
@@ -90,9 +86,9 @@ impl<'a, 'b, I: InputOnce, E: ParseError<I>, C, S> Args<'a, 'b, I, E, C, S> {
                             error2.set(error::unexpected(error::token(c)));
                         }
                         Cont(None)
-                    },
+                    }
                 }
-            },
+            }
         }
     }
 
@@ -145,9 +141,7 @@ impl<'a, 'b, I: InputOnce, O, E: ParseError<I>, C, S> Cont<'a, 'b, I, O, E, C, S
         self.case(|_, k| k.to(value))
     }
     #[inline(always)]
-    pub fn case<T>(
-        self, f: impl FnOnce(O, Args<'a, 'b, I, E, C, S>) -> Cont<'a, 'b, I, T, E, C, S>,
-    ) -> Cont<'a, 'b, I, T, E, C, S> {
+    pub fn case<T>(self, f: impl FnOnce(O, Args<'a, 'b, I, E, C, S>) -> Cont<'a, 'b, I, T, E, C, S>) -> Cont<'a, 'b, I, T, E, C, S> {
         Cont(self.0.and_then(|(o, k)| f(o, k).0))
     }
     #[inline(always)]

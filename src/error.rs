@@ -131,9 +131,7 @@ impl<M: Display, E: Display> Display for StdMessage<M, E> {
     }
 }
 
-pub trait ParseError<I: InputOnce>:
-    MessageFrom<Unexpected<Token<I::Token>>> + MessageFrom<I::Message>
-{
+pub trait ParseError<I: InputOnce>: MessageFrom<Unexpected<Token<I::Token>>> + MessageFrom<I::Message> {
     type Warn;
 
     fn new() -> Self;
@@ -150,22 +148,8 @@ pub trait ParseError<I: InputOnce>:
         self.set(Unexpected(Token(token)))
     }
 }
-pub trait EasyError<I: InputOnce>:
-    ParseError<I>
-    + MessageFrom<Expected<Token<I::Token>>>
-    + MessageFrom<Unexpected<Format<&'static str>>>
-    + MessageFrom<Message<Error<Box<dyn std::error::Error>>>>
-{
-}
-impl<
-        I: InputOnce,
-        E: ParseError<I>
-            + MessageFrom<Expected<Token<I::Token>>>
-            + MessageFrom<Unexpected<Format<&'static str>>>
-            + MessageFrom<Message<Error<Box<dyn std::error::Error>>>>,
-    > EasyError<I> for E
-{
-}
+pub trait EasyError<I: InputOnce>: ParseError<I> + MessageFrom<Expected<Token<I::Token>>> + MessageFrom<Unexpected<Format<&'static str>>> + MessageFrom<Message<Error<Box<dyn std::error::Error>>>> {}
+impl<I: InputOnce, E: ParseError<I> + MessageFrom<Expected<Token<I::Token>>> + MessageFrom<Unexpected<Format<&'static str>>> + MessageFrom<Message<Error<Box<dyn std::error::Error>>>>> EasyError<I> for E {}
 
 pub trait MessageFrom<Message> {
     fn set(&mut self, message: Message);
@@ -209,11 +193,7 @@ pub enum StdRecovered<Token> {
     },
 }
 
-pub type StdParseErrorFor<Token> = StdErrorMessage<
-    StdToken<Token, Cow<'static, str>>,
-    StdToken<Token, Cow<'static, str>>,
-    StdMessage<Cow<'static, str>, Box<dyn ErrorTrait>>,
->;
+pub type StdParseErrorFor<Token> = StdErrorMessage<StdToken<Token, Cow<'static, str>>, StdToken<Token, Cow<'static, str>>, StdMessage<Cow<'static, str>, Box<dyn ErrorTrait>>>;
 impl<Token, Position> StdParseError<Token, Position> {
     #[inline(always)]
     pub fn is_message(&self) -> bool {
@@ -225,36 +205,19 @@ impl<Token, Position> StdParseError<Token, Position> {
     where
         Token: Display,
     {
-        let recovered = self
-            .recovered
-            .iter()
-            .map(|Ranged { start, end, item }| Ranged {
-                start,
-                end,
-                item: match item {
-                    StdRecovered::Trivial {
-                        unexpected,
-                        expected,
-                    } => StdParseErrorDisplay::Trivial {
-                        unexpected: unexpected.as_ref(),
-                        expected: Either::Left(expected),
-                    },
-                    StdRecovered::Fail { messages, errors } => StdParseErrorDisplay::Fail {
-                        messages: Either::Left(messages),
-                        errors,
-                    },
-                    StdRecovered::Warn {
-                        message: StdMessage::Error(err),
-                    } => StdParseErrorDisplay::Warn {
-                        message: StdMessage::Error(err.as_ref()),
-                    },
-                    StdRecovered::Warn {
-                        message: StdMessage::Format(fmt),
-                    } => StdParseErrorDisplay::Warn {
-                        message: StdMessage::Format(fmt),
-                    },
+        let recovered = self.recovered.iter().map(|Ranged { start, end, item }| Ranged {
+            start,
+            end,
+            item: match item {
+                StdRecovered::Trivial { unexpected, expected } => StdParseErrorDisplay::Trivial {
+                    unexpected: unexpected.as_ref(),
+                    expected: Either::Left(expected),
                 },
-            });
+                StdRecovered::Fail { messages, errors } => StdParseErrorDisplay::Fail { messages: Either::Left(messages), errors },
+                StdRecovered::Warn { message: StdMessage::Error(err) } => StdParseErrorDisplay::Warn { message: StdMessage::Error(err.as_ref()) },
+                StdRecovered::Warn { message: StdMessage::Format(fmt) } => StdParseErrorDisplay::Warn { message: StdMessage::Format(fmt) },
+            },
+        });
         match &self.range {
             None => Either::Left(recovered),
             Some((start, end)) => Either::Right(recovered.chain(iter::once_with(move || Ranged {
@@ -452,11 +415,7 @@ where
 }
 
 #[inline(always)]
-fn join(
-    f: &mut fmt::Formatter,
-    mut xs: impl Iterator<Item = impl Display>,
-    conj: impl Display,
-) -> fmt::Result {
+fn join(f: &mut fmt::Formatter, mut xs: impl Iterator<Item = impl Display>, conj: impl Display) -> fmt::Result {
     match xs.next() {
         None => Ok(()),
         Some(x) => {
@@ -478,10 +437,7 @@ fn join(
 pub enum StdParseErrorDisplay<'a, Token> {
     Trivial {
         unexpected: Option<&'a StdToken<Token, Cow<'static, str>>>,
-        expected: Either<
-            &'a [StdToken<Token, Cow<'static, str>>],
-            &'a HashSet<StdToken<Token, Cow<'static, str>>>,
-        >,
+        expected: Either<&'a [StdToken<Token, Cow<'static, str>>], &'a HashSet<StdToken<Token, Cow<'static, str>>>>,
     },
     Fail {
         messages: Either<&'a [Cow<'static, str>], &'a HashSet<Cow<'static, str>>>,
@@ -495,10 +451,7 @@ impl<'a, Token: Display> Display for StdParseErrorDisplay<'a, Token> {
     #[inline(always)]
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Trivial {
-                unexpected: Some(unexpected),
-                expected,
-            } => {
+            Self::Trivial { unexpected: Some(unexpected), expected } => {
                 write!(fmt, "error: unexpected {}", unexpected)?;
                 match expected {
                     Either::Left(expected) => {
@@ -516,10 +469,7 @@ impl<'a, Token: Display> Display for StdParseErrorDisplay<'a, Token> {
                 }
                 Ok(())
             }
-            Self::Trivial {
-                unexpected: None,
-                expected,
-            } => {
+            Self::Trivial { unexpected: None, expected } => {
                 write!(fmt, "error: expecting ")?;
                 match expected {
                     Either::Left(expected) => join(fmt, expected.iter(), "or"),
@@ -529,22 +479,8 @@ impl<'a, Token: Display> Display for StdParseErrorDisplay<'a, Token> {
             Self::Fail { messages, errors } => {
                 write!(fmt, "error: ")?;
                 match messages {
-                    Either::Left(messages) => join(
-                        fmt,
-                        messages
-                            .iter()
-                            .map(Either::Left)
-                            .chain(errors.iter().map(Either::Right)),
-                        "and",
-                    ),
-                    Either::Right(messages) => join(
-                        fmt,
-                        messages
-                            .iter()
-                            .map(Either::Left)
-                            .chain(errors.iter().map(Either::Right)),
-                        "and",
-                    ),
+                    Either::Left(messages) => join(fmt, messages.iter().map(Either::Left).chain(errors.iter().map(Either::Right)), "and"),
+                    Either::Right(messages) => join(fmt, messages.iter().map(Either::Left).chain(errors.iter().map(Either::Right)), "and"),
                 }
             }
             Self::Warn { message } => write!(fmt, "warning: {}", message),
