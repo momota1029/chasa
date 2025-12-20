@@ -1,4 +1,4 @@
-# chasa-experiment
+# chasa
 
 Experimental parser combinators for the YuLang workspace.
 

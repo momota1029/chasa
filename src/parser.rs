@@ -22,7 +22,7 @@ use crate::{
     prelude::{Merger, StdErr},
 };
 
-/// Parser trait (single-shot) for `chasa-experiment`.
+/// Parser trait (single-shot) for `chasa`.
 ///
 /// `ParserOnce` consumes `self` to run the parser. Most combinators in this crate implement
 /// `ParserOnce`, and the same type may additionally implement [`ParserMut`] / [`Parser`].

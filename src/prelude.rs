@@ -1,4 +1,4 @@
-//! A convenience prelude for `chasa-experiment`.
+//! A convenience prelude for `chasa`.
 
 pub use crate::{
     input::{
