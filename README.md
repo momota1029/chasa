@@ -1,10 +1,6 @@
 # chasa
 
-Experimental parser combinators for the YuLang workspace.
-
-This crate mirrors the overall shape of `chasa` (traits, combinators, and prelude), but it
-intentionally experiments with different rollback/error behaviors. Use `chasa` documentation
-as a baseline, and apply the differences summarized below.
+Parser combinators for the YuLang workspace.
 
 ## TL;DR
 
@@ -27,26 +23,6 @@ Key combinators:
 
 Most combinators are available as methods (via `ParserOnce` / `ParserMut` / `Parser`), and the
 `prelude` imports those traits so you can write `p.right(q)` / `p.many()` / `p.sep(...)`.
-
-## How it differs from `chasa`
-
-### 1) Lookahead and negative lookahead are more permissive
-
-- `lookahead(p)` rolls back **only on success**. On failure it may consume input and keep errors.
-- `not(p)` succeeds only on soft failure, but on inner success or cut-failure it may consume input.
-
-These behaviors are intentionally looser than in `chasa`, and are reflected in each
-combinator's doc comment.
-
-### 2) Error rollback is tied to explicit rollback
-
-Error rollback follows the input rollback rules of each combinator. It is **not** automatically
-discarded for lookahead-like failures. Only combinators that explicitly roll back (`maybe`,
-`choice`, etc.) roll back errors.
-
-### 3) Tuple sequencing is short-circuiting
-
-Tuples of parsers now short-circuit on the first error.
 
 ## Showcase
 

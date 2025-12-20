@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
-This release switches the core error/rollback model to **`ErrMode`**, matching the experimental
-design from `chasa`. Parsers are now parameterized by an error mode that controls the
+This release switches the core error/rollback model to **`ErrMode`**. Parsers are now
+parameterized by an error mode that controls the
 output type and rollback policy.
 
 #### ErrMode-based output and rollback
